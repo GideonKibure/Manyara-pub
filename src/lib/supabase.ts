@@ -27,4 +27,4 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
 
 export const dataSourceLabel = isSupabaseConfigured
   ? 'Connected to Supabase. Sign-in, stock, sales, and approvals use that database. The anon key in the browser cannot bypass row level security.'
-  : 'Local demo store. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY when you are ready to connect Supabase.'
+  : 'Supabase is not connected. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to use live accounts and stock.'

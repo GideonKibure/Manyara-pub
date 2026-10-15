@@ -2,7 +2,7 @@
 
 Manyara Pub sells drinks and also earns money from a pool table and a korokoro machine. This app lets the owner watch stock, approve what employees submit, and see sales and other income separately.
 
-The interface runs today on a local demo store in the browser. The Supabase schema, row level security policies, and approval functions are included so the same rules can be enforced in PostgreSQL.
+Sign-in, stock, sales, and approvals use a live Supabase project. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` locally and on Vercel. There are no built-in demo logins.
 
 ## Run it locally
 
@@ -11,19 +11,7 @@ npm install
 npm run dev
 ```
 
-Open http://127.0.0.1:5173. The first visit creates demo data in this browser. Settings includes a control to restore that demo data.
-
-### Demo sign-in
-
-There is one login page. The account record decides whether someone is an administrator or an employee.
-
-| Name | Role | Email | Password |
-| --- | --- | --- | --- |
-| Neema Lyimo | Administrator | admin@manyarapub.co.tz | Manyara@2026 |
-| Amina Hassan | Employee | amina@manyarapub.co.tz | Staff@2026 |
-| Joseph Mwangi | Employee, no activity income | joseph@manyarapub.co.tz | Staff@2026 |
-
-Usernames `neema`, `amina`, and `joseph` also work. Joseph can record stock and sales, but not pool table or korokoro income.
+Copy `.env.example` to `.env.local`, add the public Supabase URL and anon key, then open http://127.0.0.1:5173. Sign in with a user created in Supabase Auth. The first user is an employee until you promote them to admin in SQL.
 
 ## What the business can do
 
@@ -89,7 +77,7 @@ Approval status is `pending`, `approved`, `rejected`, or `cancelled`. Only `pend
 
 ## Supabase setup
 
-When `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, the app signs in with Supabase Auth and reads and writes the Supabase database. Without those values it keeps using the local demo store.
+When `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, the app signs in with Supabase Auth and reads and writes that database. Without those values there is no live login.
 
 1. Create a Supabase project.
 2. In the SQL editor, run these files in order:
@@ -131,17 +119,38 @@ Each manual approval function locks the pending row, checks that the caller is a
 
 Notifications store an `in_app` channel today. Email or WhatsApp can be added later by reading that same record.
 
-## Deploy to Vercel
+## Deploy to Vercel and use live Supabase data
 
-1. Import the project and set the framework to Vite.
-2. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as production environment variables.
-3. Deploy. `vercel.json` sends client routes back to `index.html`.
+Vite bakes `VITE_` values into the build. The published site only talks to Supabase if those two variables exist in Vercel **before** you deploy (or you redeploy after adding them).
 
-`npm run build` typechecks and builds the production bundle.
+1. In [Supabase](https://supabase.com/dashboard) open the project, then **Project Settings → API**. Copy **Project URL** and the **anon public** key. Do not copy the service-role key.
+2. In [Vercel](https://vercel.com) import `https://github.com/GideonKibure/Manyara-pub.git` (framework: Vite).
+3. In the Vercel project go to **Settings → Environment Variables** and add both keys for **Production**, **Preview**, and **Development**:
 
-## Local demo limits
+```text
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
 
-The demo stores accounts and passwords in browser storage so the workflows can be tested without a hosted database. That is not the security boundary. Row level security and the approval functions are. Anyone with access to this browser can read the demo data. Use Supabase Auth and the migration before real business use.
+4. Deploy (or **Redeploy** if the site was already built without those variables).
+5. Copy the live URL, for example `https://manyara-pub.vercel.app`.
+6. In Supabase go to **Authentication → URL configuration**:
+   - **Site URL**: the Vercel URL
+   - **Redirect URLs**: `https://your-app.vercel.app/**`, `https://your-app.vercel.app/reset-password`, and `http://127.0.0.1:5173/**` for local work
+7. In **Authentication → Providers → Email**, turn off **Confirm email** if staff should sign in as soon as an admin creates them.
+8. In **Authentication → Users**, add the first person. Then in the SQL editor promote that person:
+
+```sql
+update public.profiles
+set role = 'admin'
+where email = 'the-email-you-created@example.com';
+```
+
+9. Sign in on the Vercel URL with that email and password. Stock, sales, bills, and approvals now read and write the same Supabase tables as local `.env.local`.
+
+Optional: Vercel **Integrations → Supabase** can inject the same public URL and anon key. Still never add the service-role key to Vercel or the frontend.
+
+`vercel.json` sends client routes back to `index.html`. `npm run build` typechecks and builds the production bundle.
 
 ## Checks worth repeating
 

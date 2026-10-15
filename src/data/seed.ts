@@ -14,30 +14,6 @@ import type {
 } from '@/types'
 import { dateKey, dateKeyDaysAgo, isoDaysAgo, minutesAgo, monthsAgoStamp, plusMinutes } from '@/utils/dates'
 
-export const DEMO_ACCOUNTS = [
-  {
-    name: 'Neema Lyimo',
-    role: 'Administrator',
-    identifier: 'admin@manyarapub.co.tz',
-    username: 'neema',
-    password: 'Manyara@2026',
-  },
-  {
-    name: 'Amina Hassan',
-    role: 'Employee',
-    identifier: 'amina@manyarapub.co.tz',
-    username: 'amina',
-    password: 'Staff@2026',
-  },
-  {
-    name: 'Joseph Mwangi',
-    role: 'Employee',
-    identifier: 'joseph@manyarapub.co.tz',
-    username: 'joseph',
-    password: 'Staff@2026',
-  },
-] as const
-
 const admin = '10000000-0000-4000-8000-000000000001'
 const amina = '10000000-0000-4000-8000-000000000002'
 const joseph = '10000000-0000-4000-8000-000000000003'
@@ -375,11 +351,7 @@ export function buildSeed(): Database {
   }
   const draft: Database = {
     version: 1,
-    accounts: [
-      { profileId: admin, password: 'Manyara@2026' },
-      { profileId: amina, password: 'Staff@2026' },
-      { profileId: joseph, password: 'Staff@2026' },
-    ],
+    accounts: [],
     resetTokens: [],
     profiles: [
       { id: admin, fullName: 'Neema Lyimo', username: 'neema', email: 'admin@manyarapub.co.tz', phone: '+255700000001', role: 'admin', isActive: true, canSubmitActivities: true, canViewStock: true, createdAt: created, updatedAt: created },

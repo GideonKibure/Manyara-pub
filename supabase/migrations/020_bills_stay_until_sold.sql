@@ -1,4 +1,4 @@
-﻿-- A bill stays a bill until it is marked sold, then it becomes a sale.
+-- A bill stays a bill until it is marked sold, then it becomes a sale.
 -- Bills are not sent for approval. Stock comes off when the bill is written.
 -- Run this after 019.
 

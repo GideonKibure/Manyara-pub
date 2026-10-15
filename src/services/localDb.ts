@@ -4,7 +4,7 @@ import { approveInvoicedDeliveries, approveRecordedSales } from '@/services/oper
 import type { Database, RecordKind, SalesItem, Session } from '@/types'
 
 export const DB_VERSION = 1
-export const DB_KEY = 'manyara.db.v1'
+export const DB_KEY = 'manyara.db.v2'
 const LOCAL_SESSION = 'manyara.session'
 const TAB_SESSION = 'manyara.session.tab'
 

@@ -52,7 +52,7 @@ export const en = {
   authForgot: 'Forgot password',
   authRoleNote: 'Use the account an administrator gave you. You do not choose a role here.',
   authResetTitle: 'Reset password',
-  authResetBody: 'In local demo mode the reset link is shown here. With Supabase it is emailed instead.',
+  authResetBody: 'Supabase emails a reset link. If this browser is not connected, the link is shown here instead.',
   authEmailAddress: 'Email address',
   authCreateReset: 'Create reset link',
   authBack: 'Back to sign in',
@@ -432,7 +432,7 @@ export const sw: Record<MessageKey, string> = {
   authForgot: 'Umesahau nenosiri',
   authRoleNote: 'Tumia akaunti uliyopewa na msimamizi. Huchagui jukumu hapa.',
   authResetTitle: 'Weka nenosiri upya',
-  authResetBody: 'Katika hali ya majaribio kiungo kinaonekana hapa. Ukiwa na Supabase, kinatumwa kwa barua pepe.',
+  authResetBody: 'Supabase hutuma kiungo kwa barua pepe. Ikiwa kivinjari hiki hakijaunganishwa, kiungo kinaonekana hapa.'
   authEmailAddress: 'Barua pepe',
   authCreateReset: 'Tengeneza kiungo',
   authBack: 'Rudi kuingia',

@@ -8,11 +8,10 @@ import { Field, TextInput } from '@/components/ui/Fields'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import { consumeLockReason } from '@/lib/sessionLock'
-import { DEMO_ACCOUNTS } from '@/data/seed'
 import { forgotSchema, loginSchema, resetSchema, type LoginValues } from '@/schemas'
 
 export function LoginPage() {
-  const { login, supabaseConfigured } = useApp()
+  const { login } = useApp()
   const { t } = useI18n()
   const navigate = useNavigate()
   const [show, setShow] = useState(false)
@@ -64,29 +63,6 @@ export function LoginPage() {
           {t('authSignIn')}
         </Button>
       </form>
-      {!supabaseConfigured && <div className="mt-8 rounded-2xl border border-line bg-white p-4">
-        <p className="text-sm font-semibold">Local demo accounts</p>
-        <p className="mt-1 text-xs leading-5 text-stone-500">These work until Supabase Auth is connected. Passwords are stored only in this browser.</p>
-        <div className="mt-3 space-y-2">
-          {DEMO_ACCOUNTS.map((account) => (
-            <button
-              key={account.identifier}
-              type="button"
-              className="flex w-full items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-left text-sm hover:bg-stone-100"
-              onClick={() => {
-                form.setValue('identifier', account.identifier)
-                form.setValue('password', account.password)
-              }}
-            >
-              <span>
-                <span className="block font-medium">{account.name}</span>
-                <span className="text-stone-500">{account.role}</span>
-              </span>
-              <span className="text-xs text-amber-800">Use</span>
-            </button>
-          ))}
-        </div>
-      </div>}
     </div>
   )
 }

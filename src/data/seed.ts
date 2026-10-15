@@ -360,10 +360,10 @@ export function buildSeed(): Database {
 
   const catalog = products.map(({ opening: _opening, ...item }) => item)
   const expected: Record<string, number> = {
-    [safari]: 54,
+    [safari]: 48,
     [kili]: 26,
     [sere]: 10,
-    [coke]: 52,
+    [coke]: 40,
     [fanta]: 6,
     [sprite]: 0,
     [water]: 42,

@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --color-ink: #1c1917;
+  --color-paper: #f4f1eb;
+  --color-charcoal: #161412;
+  --color-gold: #b45309;
+  --color-line: #e6e0d6;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--color-paper);
+    color: var(--color-ink);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid #b45309;
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-card,
+  .nav-tab {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+.sales-day-list {
+  scrollbar-width: thin;
+  scrollbar-color: #d6d3d1 transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sales-day-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sales-day-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #d6d3d1;
+}
+
+.app-canvas {
+  background-color: #f4f1eb;
+}
+
+@media (max-width: 767px) {
+  .app-canvas {
+    background-image:
+      linear-gradient(180deg, rgba(244, 241, 235, 0.9), rgba(244, 241, 235, 0.96)),
+      url('/login-bg.jpg');
+    background-size: cover;
+    background-position: center top;
+  }
+}
+
+.employee-dash {
+  background:
+    radial-gradient(720px 340px at 0% -4%, rgba(251, 191, 36, 0.42), transparent 58%),
+    radial-gradient(560px 280px at 100% 0%, rgba(28, 25, 23, 0.06), transparent 52%),
+    linear-gradient(180deg, rgba(248, 243, 234, 0.9), rgba(244, 241, 235, 0.94) 48%, rgba(239, 228, 212, 0.96)),
+    url('/login-bg.jpg');
+  background-size: auto, auto, auto, cover;
+  background-position: center top;
+}
+
+.brand-panel {
+  background:
+    radial-gradient(900px 420px at -10% -10%, rgba(180, 83, 9, 0.38), transparent 55%),
+    linear-gradient(165deg, #292524 0%, #0c0a09 72%);
+}
+
+@media print {
+  body {
+    background: white !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-area {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

@@ -620,6 +620,9 @@ export function submitSale(db: Database, userId: string, draft: SaleDraft): OpRe
   if (wroteBill && (customerName.length < 2 || customerName.length > 80)) return fail('Enter the customer name.')
   if (wroteBill && draft.paymentStatus !== 'paid' && draft.paymentStatus !== 'unpaid') return fail('Mark the bill paid or unpaid.')
   if (!wroteBill && draft.paymentStatus !== 'paid') return fail('A sale can be recorded only when it is paid.')
+  if (actor.profile.role !== 'admin' && db.settings.allowRemainingCount && recordKind === 'sale') {
+    return fail('Sales are taken from remaining stock while that mode is on. Use Remaining stock.')
+  }
   if ((draft.notes ?? '').trim().length > 400) return fail('Notes are too long.')
 
   const priced = buildSaleItems(db, draft.items)
@@ -678,6 +681,76 @@ export function submitSale(db: Database, userId: string, draft: SaleDraft): OpRe
   }
   next = audit(next, userId, 'sale.submit', 'sale', transaction.id, `Saved bill ${transaction.code} for ${customerName}. Stock was updated. It stays a bill until it is marked sold.`)
   return finish(next, `${transaction.code} saved. Stock was updated. It stays in your bills until you mark it sold.`)
+}
+
+export function submitRemainingCount(db: Database, userId: string, lines: Array<{ productId: string; remaining: number }>): OpResult {
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
+  if (actor.profile.role !== 'admin' && !db.settings.allowRemainingCount) {
+    return fail('The administrator has not opened remaining-stock count.')
+  }
+  if (!lines.length) return fail('Enter the remaining quantity for each product.')
+  const items: SalesItem[] = []
+  for (const line of lines) {
+    const product = db.products.find((item) => item.id === line.productId && item.isActive)
+    if (!product) return fail('Choose an active product.')
+    if (!Number.isInteger(line.remaining) || line.remaining < 0) return fail(`Enter the remaining quantity for ${product.name}.`)
+    const snap = snapshotFor(db, product.id)
+    if (line.remaining > snap.available) {
+      return fail(`${product.name} has ${snap.available} available. Remaining cannot be higher.`)
+    }
+    const sold = snap.available - line.remaining
+    if (sold < 1) continue
+    items.push({
+      id: uid(),
+      productId: product.id,
+      quantity: sold,
+      unitPrice: product.sellingPrice,
+      unitCost: product.costPrice,
+      sizeName: 'one',
+      portion: 'full',
+    })
+  }
+  if (!items.length) return fail('The remaining quantities match current stock. Nothing was sold.')
+  const coded = takeCode(db, 'sale', 'SL')
+  const stamped = now()
+  const transaction: SalesTransaction = {
+    id: uid(),
+    code: coded.code,
+    customerName: '',
+    paymentStatus: 'paid',
+    recordKind: 'sale',
+    generatedAt: stamped,
+    notes: 'Remaining stock count',
+    status: 'approved',
+    submittedBy: userId,
+    submittedAt: stamped,
+    reviewedBy: userId,
+    reviewedAt: stamped,
+    items,
+  }
+  const stockMoves: InventoryMovement[] = items.map((item) => ({
+    id: uid(),
+    productId: item.productId,
+    type: 'sale',
+    quantity: -item.quantity,
+    unitCost: item.unitCost,
+    referenceType: 'sale',
+    referenceId: transaction.id,
+    note: `Remaining count ${transaction.code}`,
+    createdBy: userId,
+    createdAt: stamped,
+  }))
+  const profit = items.reduce((sum, item) => sum + item.quantity * (item.unitPrice - item.unitCost), 0)
+  let next: Database = { ...coded.db, sales: [transaction, ...coded.db.sales], movements: [...coded.db.movements, ...stockMoves] }
+  next = audit(next, userId, 'sale.remaining', 'sale', transaction.id, `Recorded remaining stock as sale ${transaction.code}.`)
+  next = notifyAdmins(next, {
+    type: 'submission_approved',
+    title: `${transaction.code} remaining stock report`,
+    message: `${actor.profile.fullName} sent a remaining-stock report. ${transaction.code}: ${items.reduce((sum, item) => sum + item.quantity, 0)} sold, profit ${profit}. Open Remaining stock to review and download it.`,
+    href: '/admin/remaining',
+  })
+  return finish(next, `${transaction.code} recorded from remaining stock. Estimated profit ${profit}.`)
 }
 
 export function setBillPayment(db: Database, userId: string, transactionId: string, paymentStatus: SalesTransaction['paymentStatus']): OpResult {
@@ -1381,7 +1454,7 @@ export function adjustStock(db: Database, userId: string, draft: AdjustmentDraft
   return finish(next, `${coded.code} recorded. Confirmed stock for ${product.name} changed by ${delta}.`)
 }
 
-export function updateSettings(db: Database, userId: string, input: { businessName: string; currency: string; currencySymbol: string; lowStockAlerts: boolean }): OpResult {
+export function updateSettings(db: Database, userId: string, input: { businessName: string; currency: string; currencySymbol: string; lowStockAlerts: boolean; allowRemainingCount: boolean }): OpResult {
   const adminCheck = requireAdmin(db, userId)
   if (!adminCheck.ok) return adminCheck
   const parsed = settingsSchema.safeParse(input)

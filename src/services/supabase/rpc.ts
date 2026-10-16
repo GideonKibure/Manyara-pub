@@ -80,6 +80,11 @@ export async function submitSale(payload: Record<string, unknown>) {
   return client.rpc('submit_sale', { p_payload: payload })
 }
 
+export async function submitRemainingCount(payload: Record<string, unknown>) {
+  const client = await requireClient()
+  return client.rpc('submit_remaining_count', { p_payload: payload })
+}
+
 export async function updateSale(id: string, payload: Record<string, unknown>) {
   const client = await requireClient()
   return client.rpc('update_sale', { p_id: id, p_payload: payload })

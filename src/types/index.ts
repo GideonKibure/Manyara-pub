@@ -233,6 +233,7 @@ export interface BusinessSettings {
   currency: string
   currencySymbol: string
   lowStockAlerts: boolean
+  allowRemainingCount: boolean
   updatedAt: string
 }
 

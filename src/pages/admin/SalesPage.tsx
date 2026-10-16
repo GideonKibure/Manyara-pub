@@ -27,13 +27,13 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     <div>
       <PageHeader title={kind === 'bill' ? t('pageBills') : t('pageSales')} description={kind === 'bill' ? t('pageBillsBody') : t('pageSalesBody')} actions={<Button variant="gold" onClick={() => navigate(kind === 'bill' ? '/admin/bills/new' : '/admin/sales/new')}>{kind === 'bill' ? t('pageAddBill') : t('pageAddSale')}</Button>} />
       <div className="mb-4 grid gap-3 md:grid-cols-2">
-        <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder={kind === 'bill' ? 'Search customer, code, or employee' : 'Search code or employee'} aria-label="Search sales" />
-        <SelectInput value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter sales by status">
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="cancelled">Cancelled</option>
+        <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder={kind === 'bill' ? t('searchBills') : t('searchSales')} aria-label={kind === 'bill' ? t('searchBills') : t('searchSales')} />
+        <SelectInput value={status} onChange={(event) => setStatus(event.target.value)} aria-label={t('filterStatus')}>
+          <option value="all">{t('allStatuses')}</option>
+          <option value="pending">{t('statusPending')}</option>
+          <option value="approved">{t('statusApproved')}</option>
+          <option value="rejected">{t('statusRejected')}</option>
+          <option value="cancelled">{t('statusCancelled')}</option>
         </SelectInput>
       </div>
       <DataTable

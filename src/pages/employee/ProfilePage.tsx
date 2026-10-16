@@ -75,8 +75,8 @@ export function ProfilePage() {
       <Panel>
         <h2 className="mb-4 font-semibold">Contact details</h2>
         <form className="grid gap-4 md:grid-cols-2" onSubmit={profileForm.handleSubmit(async (values) => { await saveProfile(values) })}>
-          <Field label="Full name" error={profileForm.formState.errors.fullName?.message}><TextInput {...profileForm.register('fullName')} /></Field>
-          <Field label="Phone" error={profileForm.formState.errors.phone?.message}><TextInput {...profileForm.register('phone')} /></Field>
+          <Field label={t('fullName')} error={profileForm.formState.errors.fullName?.message}><TextInput {...profileForm.register('fullName')} /></Field>
+          <Field label={t('phone')} error={profileForm.formState.errors.phone?.message}><TextInput {...profileForm.register('phone')} /></Field>
           <Button type="submit" variant="gold" loading={profileForm.formState.isSubmitting}>Save profile</Button>
         </form>
       </Panel>
@@ -86,9 +86,9 @@ export function ProfilePage() {
           const result = await changeOwnPassword(values.current, values.password)
           if (result.ok) passwordForm.reset()
         })}>
-          <Field label="Current password" error={passwordForm.formState.errors.current?.message}><TextInput type="password" {...passwordForm.register('current')} /></Field>
-          <Field label="New password" error={passwordForm.formState.errors.password?.message}><TextInput type="password" {...passwordForm.register('password')} /></Field>
-          <Field label="Confirm password" error={passwordForm.formState.errors.confirm?.message}><TextInput type="password" {...passwordForm.register('confirm')} /></Field>
+          <Field label={t('passwordCurrent')} error={passwordForm.formState.errors.current?.message}><TextInput type="password" {...passwordForm.register('current')} /></Field>
+          <Field label={t('passwordNew')} error={passwordForm.formState.errors.password?.message}><TextInput type="password" {...passwordForm.register('password')} /></Field>
+          <Field label={t('passwordConfirm')} error={passwordForm.formState.errors.confirm?.message}><TextInput type="password" {...passwordForm.register('confirm')} /></Field>
           <div className="md:col-span-2"><Button type="submit" loading={passwordForm.formState.isSubmitting}>Change password</Button></div>
         </form>
       </Panel>

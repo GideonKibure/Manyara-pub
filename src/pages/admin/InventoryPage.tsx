@@ -25,12 +25,12 @@ export function InventoryPage() {
   return (
     <div>
       <PageHeader title={t('pageInventory')} description={t('pageInventoryBody')} actions={<Button variant="gold" onClick={() => setOpen(true)}>{t('pageAdjust')}</Button>} />
-      <TextInput className="mb-4" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search products" aria-label="Search inventory" />
+      <TextInput className="mb-4" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchProducts')} aria-label={t('searchProducts')} />
       <DataTable
         rows={rows}
         getRowId={(row) => row.id}
         resetKey={query}
-        emptyTitle="No products"
+        emptyTitle={t('reportNoProducts')}
         columns={[
           { key: 'name', header: t('productsProduct'), sortValue: (row) => row.name, render: (row) => <span className="flex items-center gap-2"><ProductThumb src={row.imageUrl} name={row.name} className="h-10 w-10 shrink-0" />{row.name}</span> },
           { key: 'confirmed', header: 'Confirmed', render: (row) => app.snapshots.find((item) => item.productId === row.id)?.confirmed ?? 0 },
@@ -62,6 +62,7 @@ export function InventoryPage() {
 }
 
 function AdjustDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useI18n()
   const { products, adjust, snapshots } = useApp()
   const [search, setSearch] = useState('')
   const [productId, setProductId] = useState(products[0]?.id ?? '')
@@ -70,7 +71,7 @@ function AdjustDialog({ open, onClose }: { open: boolean; onClose: () => void })
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
   return (
-    <Modal open={open} title="Correct stock" onClose={onClose}>
+    <Modal open={open} title={t('pageAdjust')} onClose={onClose}>
       <form
         className="space-y-4"
         onSubmit={async (event) => {
@@ -83,16 +84,16 @@ function AdjustDialog({ open, onClose }: { open: boolean; onClose: () => void })
         }}
       >
         <ProductPicker products={products.filter((product) => product.isActive)} selectedId={productId} onSelect={setProductId} query={search} onQuery={setSearch} snapshots={snapshots} canSeeStock />
-        <Field label="Direction">
+        <Field label={t('fieldDirection')}>
           <SelectInput value={direction} onChange={(event) => setDirection(event.target.value as 'in' | 'out')}>
-            <option value="out">Remove stock</option>
-            <option value="in">Add stock</option>
+            <option value="out">{t('removeStock')}</option>
+            <option value="in">{t('addStock')}</option>
           </SelectInput>
         </Field>
-        <Field label="Quantity"><NumberInput value={quantity} onValueChange={setQuantity} /></Field>
-        <Field label="Reason"><TextArea value={reason} onChange={(event) => setReason(event.target.value)} /></Field>
-        <p className="text-sm text-stone-500">This writes a permanent adjustment. It cannot take confirmed stock below zero or below pending reservations.</p>
-        <Button type="submit" variant="gold" loading={loading}>Record adjustment</Button>
+        <Field label={t('fieldQuantity')}><NumberInput value={quantity} onValueChange={setQuantity} /></Field>
+        <Field label={t('fieldReason')}><TextArea value={reason} onChange={(event) => setReason(event.target.value)} /></Field>
+        <p className="text-sm text-stone-500">{t('adjustPermanent')}</p>
+        <Button type="submit" variant="gold" loading={loading}>{t('recordAdjustment')}</Button>
       </form>
     </Modal>
   )

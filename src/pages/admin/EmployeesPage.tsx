@@ -25,20 +25,20 @@ export function EmployeesPage() {
       <DataTable
         rows={employees}
         getRowId={(row) => row.id}
-        emptyTitle="No employees yet"
+        emptyTitle={t('emptyEmployees')}
         columns={[
-          { key: 'name', header: 'Name', render: (row) => <PersonName name={row.fullName} src={row.imageUrl} /> },
-          { key: 'email', header: 'Email', className: 'hidden md:table-cell', render: (row) => row.email },
-          { key: 'access', header: 'Access', render: (row) => (row.canSubmitActivities ? 'Stock, sales, and activities' : 'Stock and sales') },
-          { key: 'status', header: 'Status', render: (row) => (row.isActive ? 'Active' : 'Inactive') },
+          { key: 'name', header: t('fieldName'), render: (row) => <PersonName name={row.fullName} src={row.imageUrl} /> },
+          { key: 'email', header: t('authEmailAddress'), className: 'hidden md:table-cell', render: (row) => row.email },
+          { key: 'access', header: t('accessCol'), render: (row) => (row.canSubmitActivities ? t('accessWithActivities') : t('accessStockSales')) },
+          { key: 'status', header: t('labelStatus'), render: (row) => (row.isActive ? t('fieldActive') : t('inactive')) },
           { key: 'actions', header: '', render: (row) => <AccessButtons profile={row} /> },
         ]}
       />
       {open && <EmployeeDialog onClose={() => setOpen(false)} onCreated={setPassword} />}
-      <Modal open={Boolean(password)} title="Share this password once" onClose={() => setPassword('')}>
-        <p className="text-sm text-stone-600">Give this temporary password to the employee. It will not be shown again.</p>
+      <Modal open={Boolean(password)} title={t('sharePasswordOnce')} onClose={() => setPassword('')}>
+        <p className="text-sm text-stone-600">{t('sharePasswordBody')}</p>
         <p className="mt-3 rounded-xl bg-stone-100 px-3 py-2 font-mono text-sm">{password}</p>
-        <Button className="mt-4" onClick={() => setPassword('')}>Done</Button>
+        <Button className="mt-4" onClick={() => setPassword('')}>{t('done')}</Button>
       </Modal>
     </div>
   )
@@ -75,21 +75,22 @@ function AccessButtons({ profile }: { profile: Profile }) {
       />
       <Button size="sm" variant="secondary" loading={busy} onClick={() => fileRef.current?.click()}>{profile.imageUrl ? t('staffChangePhoto') : t('staffPhoto')}</Button>
       {profile.imageUrl && <Button size="sm" variant="secondary" onClick={() => editEmployee(profile.id, { imageUrl: '' })}>{t('staffRemovePhoto')}</Button>}
-      <Button size="sm" variant="secondary" onClick={() => editEmployee(profile.id, { isActive: !profile.isActive })}>{profile.isActive ? 'Deactivate' : 'Activate'}</Button>
-      <Button size="sm" variant="secondary" onClick={() => editEmployee(profile.id, { canSubmitActivities: !profile.canSubmitActivities })}>{profile.canSubmitActivities ? 'Revoke activities' : 'Allow activities'}</Button>
+      <Button size="sm" variant="secondary" onClick={() => editEmployee(profile.id, { isActive: !profile.isActive })}>{profile.isActive ? t('deactivate') : t('activate')}</Button>
+      <Button size="sm" variant="secondary" onClick={() => editEmployee(profile.id, { canSubmitActivities: !profile.canSubmitActivities })}>{profile.canSubmitActivities ? t('revokeActivities') : t('allowActivities')}</Button>
       {error && <p className="basis-full text-sm text-rose-700">{error}</p>}
     </div>
   )
 }
 
 function EmployeeDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (password: string) => void }) {
+  const { t } = useI18n()
   const { addEmployee } = useApp()
   const form = useForm<EmployeeValues>({
     resolver: zodResolver(employeeSchema),
     defaultValues: { fullName: '', username: '', email: '', phone: '', password: '', canSubmitActivities: false, canViewStock: true },
   })
   return (
-    <Modal open title="Add employee" onClose={onClose}>
+    <Modal open title={t('pageAddEmployee')} onClose={onClose}>
       <form className="space-y-4" onSubmit={form.handleSubmit(async (values) => {
         const result = await addEmployee(values)
         if (result.ok) {
@@ -97,14 +98,14 @@ function EmployeeDialog({ onClose, onCreated }: { onClose: () => void; onCreated
           onClose()
         }
       })}>
-        <Field label="Full name" error={form.formState.errors.fullName?.message}><TextInput {...form.register('fullName')} /></Field>
-        <Field label="Username" error={form.formState.errors.username?.message}><TextInput {...form.register('username')} /></Field>
-        <Field label="Email" error={form.formState.errors.email?.message}><TextInput type="email" {...form.register('email')} /></Field>
-        <Field label="Phone" error={form.formState.errors.phone?.message}><TextInput {...form.register('phone')} /></Field>
-        <Field label="Temporary password" error={form.formState.errors.password?.message}><TextInput type="text" {...form.register('password')} /></Field>
-        <Checkbox label="Can submit pool table and korokoro income" {...form.register('canSubmitActivities')} />
+        <Field label={t('fullName')} error={form.formState.errors.fullName?.message}><TextInput {...form.register('fullName')} /></Field>
+        <Field label={t('username')} error={form.formState.errors.username?.message}><TextInput {...form.register('username')} /></Field>
+        <Field label={t('authEmailAddress')} error={form.formState.errors.email?.message}><TextInput type="email" {...form.register('email')} /></Field>
+        <Field label={t('phone')} error={form.formState.errors.phone?.message}><TextInput {...form.register('phone')} /></Field>
+        <Field label={t('tempPassword')} error={form.formState.errors.password?.message}><TextInput type="text" {...form.register('password')} /></Field>
+        <Checkbox label={t('canSubmitActivities')} {...form.register('canSubmitActivities')} />
         <input type="hidden" value="true" {...form.register('canViewStock', { setValueAs: () => true })} />
-        <Button type="submit" variant="gold" loading={form.formState.isSubmitting}>Create account</Button>
+        <Button type="submit" variant="gold" loading={form.formState.isSubmitting}>{t('createAccount')}</Button>
       </form>
     </Modal>
   )

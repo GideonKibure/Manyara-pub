@@ -7,7 +7,8 @@
       name="description"
       content="Manyara Pub inventory, sales, approvals, and income tracking."
     />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/logo.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,9 +16,35 @@
       rel="stylesheet"
     />
     <title>Manyara Pub</title>
+    <style>
+      .boot-splash{position:relative;display:grid;min-height:100vh;place-items:center;overflow:hidden;padding:1.5rem;color:#fafaf9;background:radial-gradient(720px 380px at 12% -8%,rgba(245,158,11,.38),transparent 58%),linear-gradient(165deg,#1c1917 0%,#0c0a09 68%);font-family:Outfit,ui-sans-serif,system-ui,sans-serif}
+      .boot-splash-card{position:relative;z-index:1;width:min(100%,22rem);text-align:center}
+      .boot-kicker{margin:1.15rem 0 0;font-size:.7rem;font-weight:700;letter-spacing:.28em;text-transform:uppercase;color:#fbbf24}
+      .boot-title{margin:.45rem 0 0;font-family:Fraunces,ui-serif,Georgia,serif;font-size:1.7rem}
+      .boot-hint{margin:.55rem 0 0;font-size:.9rem;color:#d6d3d1}
+      .boot-mark{display:flex;justify-content:center;gap:.55rem}
+      .boot-glass{display:block;width:1.15rem;height:2.6rem;border-radius:999px 999px 8px 8px;background:linear-gradient(180deg,#fde68a,#b45309 58%,#78350f);animation:boot-pour 1.15s ease-in-out infinite;transform-origin:50% 100%}
+      .boot-glass-delay{animation-delay:.18s;height:3.1rem}
+      .boot-glass-late{animation-delay:.36s}
+      .boot-track{margin:1.4rem auto 0;height:4px;width:100%;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.12)}
+      .boot-bar{display:block;height:100%;width:38%;border-radius:inherit;background:linear-gradient(90deg,#f59e0b,#fde68a,#f59e0b);animation:boot-slide 1.2s ease-in-out infinite}
+      @keyframes boot-pour{0%,100%{transform:scaleY(.72);opacity:.7}50%{transform:scaleY(1);opacity:1}}
+      @keyframes boot-slide{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-splash" role="status" aria-live="polite">
+        <div class="boot-splash-glow" aria-hidden="true"></div>
+        <div class="boot-splash-card">
+          <img src="/logo.png" alt="Manyara Pub" style="display:block;margin:0 auto .7rem;height:7.5rem;width:auto;max-width:13rem;object-fit:contain" />
+          <p class="boot-kicker">Manyara Pub</p>
+          <p class="boot-title">Opening Manyara Pub</p>
+          <p class="boot-hint">Your stock, sales, and bills are coming in.</p>
+          <div class="boot-track" aria-hidden="true"><span class="boot-bar"></span></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

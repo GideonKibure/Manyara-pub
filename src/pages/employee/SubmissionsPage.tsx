@@ -36,19 +36,19 @@ export function SubmissionsPage() {
     <div>
       <PageHeader title={t('pageSubmissions')} description={t('pageSubmissionsBody')} />
       <div className="mb-4 grid gap-3 md:grid-cols-2">
-        <SelectInput value={kind} onChange={(event) => setKind(event.target.value as Kind)} aria-label="Submission type">
-          <option value="all">All types</option>
-          <option value="stock">Stock in</option>
-          <option value="sale">Sales</option>
-          <option value="activity">Activities</option>
-          <option value="expense">Expenses</option>
+        <SelectInput value={kind} onChange={(event) => setKind(event.target.value as Kind)} aria-label={t('submissionType')}>
+          <option value="all">{t('allTypes')}</option>
+          <option value="stock">{t('navStockIn')}</option>
+          <option value="sale">{t('navSales')}</option>
+          <option value="activity">{t('navActivities')}</option>
+          <option value="expense">{t('navExpenses')}</option>
         </SelectInput>
-        <SelectInput value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Submission status">
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="cancelled">Cancelled</option>
+        <SelectInput value={status} onChange={(event) => setStatus(event.target.value)} aria-label={t('submissionStatus')}>
+          <option value="all">{t('allStatuses')}</option>
+          <option value="pending">{t('statusPending')}</option>
+          <option value="approved">{t('statusApproved')}</option>
+          <option value="rejected">{t('statusRejected')}</option>
+          <option value="cancelled">{t('statusCancelled')}</option>
         </SelectInput>
       </div>
       <div className="space-y-3">

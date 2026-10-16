@@ -17,17 +17,17 @@ export function AuditPage() {
   return (
     <div>
       <PageHeader title={t('pageAudit')} description={t('pageAuditBody')} />
-      <TextInput className="mb-4" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search the log" aria-label="Search audit log" />
+      <TextInput className="mb-4" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchAudit')} aria-label={t('searchAudit')} />
       <DataTable
         rows={rows}
         getRowId={(row) => row.id}
         resetKey={query}
-        emptyTitle="No log entries"
+        emptyTitle={t('emptyAudit')}
         columns={[
-          { key: 'when', header: 'When', sortValue: (row) => row.createdAt, render: (row) => formatDateTime(row.createdAt) },
-          { key: 'who', header: 'Who', render: (row) => nameOf(row.actorId) },
-          { key: 'action', header: 'Action', className: 'hidden md:table-cell', render: (row) => row.action },
-          { key: 'summary', header: 'What happened', render: (row) => row.summary },
+          { key: 'when', header: t('whenCol'), sortValue: (row) => row.createdAt, render: (row) => formatDateTime(row.createdAt) },
+          { key: 'who', header: t('whoCol'), render: (row) => nameOf(row.actorId) },
+          { key: 'action', header: t('actionCol'), className: 'hidden md:table-cell', render: (row) => row.action },
+          { key: 'summary', header: t('summaryCol'), render: (row) => row.summary },
         ]}
       />
     </div>

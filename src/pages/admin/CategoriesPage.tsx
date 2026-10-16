@@ -26,13 +26,13 @@ export function CategoriesPage() {
       <DataTable
         rows={categories}
         getRowId={(row) => row.id}
-        emptyTitle="No categories"
+        emptyTitle={t('emptyCategories')}
         columns={[
-          { key: 'name', header: 'Name', sortValue: (row) => row.name, render: (row) => row.name },
-          { key: 'description', header: 'Description', className: 'hidden md:table-cell', render: (row) => row.description || '—' },
-          { key: 'products', header: 'Products', render: (row) => products.filter((product) => product.categoryId === row.id).length },
-          { key: 'status', header: 'Status', render: (row) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${row.isActive ? 'bg-emerald-100 text-emerald-950' : 'bg-stone-200 text-stone-700'}`}>{row.isActive ? 'Active' : 'Inactive'}</span> },
-          { key: 'actions', header: '', render: (row) => <Button size="sm" variant="secondary" onClick={() => { setEditing(row); setOpen(true) }}>Edit</Button> },
+          { key: 'name', header: t('fieldName'), sortValue: (row) => row.name, render: (row) => row.name },
+          { key: 'description', header: t('fieldDescription'), className: 'hidden md:table-cell', render: (row) => row.description || '—' },
+          { key: 'products', header: t('navProducts'), render: (row) => products.filter((product) => product.categoryId === row.id).length },
+          { key: 'status', header: t('labelStatus'), render: (row) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${row.isActive ? 'bg-emerald-100 text-emerald-950' : 'bg-stone-200 text-stone-700'}`}>{row.isActive ? t('fieldActive') : t('inactive')}</span> },
+          { key: 'actions', header: '', render: (row) => <Button size="sm" variant="secondary" onClick={() => { setEditing(row); setOpen(true) }}>{t('edit')}</Button> },
         ]}
       />
       {open && <CategoryDialog category={editing} onClose={() => setOpen(false)} />}
@@ -41,13 +41,14 @@ export function CategoriesPage() {
 }
 
 function CategoryDialog({ category, onClose }: { category: Category | null; onClose: () => void }) {
+  const { t } = useI18n()
   const { addCategory, editCategory } = useApp()
   const form = useForm<CategoryValues>({
     resolver: zodResolver(categorySchema),
     defaultValues: category ?? { name: '', description: '', isActive: true },
   })
   return (
-    <Modal open title={category ? 'Edit category' : 'Add category'} onClose={onClose}>
+    <Modal open title={category ? t('edit') : t('pageAddCategory')} onClose={onClose}>
       <form
         className="space-y-4"
         onSubmit={form.handleSubmit(async (values) => {
@@ -55,16 +56,16 @@ function CategoryDialog({ category, onClose }: { category: Category | null; onCl
           if (result.ok) onClose()
         })}
       >
-        <Field label="Name" error={form.formState.errors.name?.message}>
+        <Field label={t('fieldName')} error={form.formState.errors.name?.message}>
           <TextInput {...form.register('name')} />
         </Field>
-        <Field label="Description" error={form.formState.errors.description?.message}>
+        <Field label={t('fieldDescription')} error={form.formState.errors.description?.message}>
           <TextArea {...form.register('description')} />
         </Field>
-        <Checkbox label="Active" {...form.register('isActive')} />
+        <Checkbox label={t('fieldActive')} {...form.register('isActive')} />
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="gold" loading={form.formState.isSubmitting}>Save</Button>
+          <Button type="button" variant="secondary" onClick={onClose}>{t('cancel')}</Button>
+          <Button type="submit" variant="gold" loading={form.formState.isSubmitting}>{t('save')}</Button>
         </div>
       </form>
     </Modal>

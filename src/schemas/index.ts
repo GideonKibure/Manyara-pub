@@ -134,6 +134,7 @@ export const settingsSchema = z.object({
     .regex(/^[A-Z]{3}$/, 'Use a 3-letter currency code'),
   currencySymbol: z.string().trim().min(1, 'Enter a currency symbol').max(8),
   lowStockAlerts: z.boolean(),
+  allowRemainingCount: z.boolean(),
 })
 
 export const unitSchema = z.object({

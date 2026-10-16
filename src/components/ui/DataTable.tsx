@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { useI18n } from '@/i18n/LanguageContext'
 
 export interface Column<T> {
   key: string
@@ -27,6 +28,7 @@ export function DataTable<T>({
   emptyTitle: string
   emptyBody?: string
 }) {
+  const { t } = useI18n()
   const [page, setPage] = useState(1)
   const [sortKey, setSortKey] = useState<string | null>(null)
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
@@ -61,9 +63,23 @@ export function DataTable<T>({
   const start = (current - 1) * pageSize
   const visible = sorted.slice(start, start + pageSize)
 
+  const visibleColumns = columns.filter((column) => !column.className?.includes('hidden'))
+
   return (
     <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
-      <div className="overflow-x-auto">
+      <div className="divide-y divide-line md:hidden">
+        {visible.map((row) => (
+          <article key={getRowId(row)} className="space-y-2 px-3 py-3">
+            {visibleColumns.map((column, index) => (
+              <div key={column.key} className={index === 0 ? 'font-semibold text-ink' : 'flex items-start justify-between gap-3 text-sm'}>
+                {index > 0 && <span className="text-stone-500">{column.header}</span>}
+                <span className={index === 0 ? 'block' : 'text-right text-ink'}>{column.render(row)}</span>
+              </div>
+            ))}
+          </article>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto md:block">
         <table className="min-w-full border-collapse text-left text-sm">
           <thead className="bg-stone-50 text-stone-500">
             <tr>
@@ -99,18 +115,18 @@ export function DataTable<T>({
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-3 text-sm text-stone-500">
-        <span>
-          Showing {start + 1}–{Math.min(start + pageSize, sorted.length)} of {sorted.length}
+      <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-3 text-sm text-stone-500 sm:px-4">
+        <span className="min-w-0 truncate">
+          {start + 1}–{Math.min(start + pageSize, sorted.length)} / {sorted.length}
         </span>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" aria-label="Previous page" disabled={current === 1} onClick={() => setPage(current - 1)}>
+          <Button variant="secondary" size="sm" aria-label={t('tablePrev')} disabled={current === 1} onClick={() => setPage(current - 1)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span>
             {current} / {pages}
           </span>
-          <Button variant="secondary" size="sm" aria-label="Next page" disabled={current === pages} onClick={() => setPage(current + 1)}>
+          <Button variant="secondary" size="sm" aria-label={t('tableNext')} disabled={current === pages} onClick={() => setPage(current + 1)}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>

@@ -41,15 +41,15 @@ export function useI18n() {
   return context
 }
 
-export function LanguageSwitch({ className = '', roomy = false }: { className?: string; roomy?: boolean }) {
+export function LanguageSwitch({ className = '', roomy = false, glass = false }: { className?: string; roomy?: boolean; glass?: boolean }) {
   const { language, setLanguage, t } = useI18n()
   const item = roomy ? 'h-11 flex-1 rounded-lg text-sm' : 'rounded-md px-2 py-1'
   return (
-    <div className={`flex rounded-xl border border-line bg-white p-1 text-xs font-semibold ${roomy ? 'w-full gap-1' : ''} ${className}`} role="group" aria-label={t('language')}>
-      <button type="button" className={`${item} ${language === 'en' ? 'bg-charcoal text-white' : 'text-stone-600'}`} onClick={() => setLanguage('en')}>
+    <div className={`flex rounded-xl border p-1 text-xs font-semibold ${glass ? 'border-white/25 bg-white/10 text-white' : 'border-line bg-white'} ${roomy ? 'w-full gap-1' : ''} ${className}`} role="group" aria-label={t('language')}>
+      <button type="button" className={`${item} ${language === 'en' ? (glass ? 'bg-amber-600 text-white' : 'bg-charcoal text-white') : glass ? 'text-white/70' : 'text-stone-600'}`} onClick={() => setLanguage('en')}>
         EN
       </button>
-      <button type="button" className={`${item} ${language === 'sw' ? 'bg-charcoal text-white' : 'text-stone-600'}`} onClick={() => setLanguage('sw')}>
+      <button type="button" className={`${item} ${language === 'sw' ? (glass ? 'bg-amber-600 text-white' : 'bg-charcoal text-white') : glass ? 'text-white/70' : 'text-stone-600'}`} onClick={() => setLanguage('sw')}>
         SW
       </button>
     </div>

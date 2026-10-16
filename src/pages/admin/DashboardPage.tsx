@@ -33,6 +33,9 @@ export function DashboardPage() {
           <StatCard label={t('dashReceived')} value={String(dashboard.todayStockReceivedUnits)} hint={money(dashboard.todayStockReceivedCost)} />
         </div>
         <p className="mt-2 text-sm text-stone-600">{t('dashCombined')}: <span className="font-semibold text-ink">{money(dashboard.todayTotalRevenue)}</span></p>
+        <Link to="/admin/remaining" className="mt-3 block rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 hover:bg-amber-100">
+          {t('remainToday')}
+        </Link>
       </section>
 
       <section>

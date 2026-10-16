@@ -63,43 +63,43 @@ export function StockInPage() {
         </ul>
       </Panel>
       <div className="mb-4 grid gap-3 md:grid-cols-2">
-        <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search code, supplier, or invoice" aria-label="Search deliveries" />
-        <SelectInput value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter by status">
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="cancelled">Cancelled</option>
+        <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchDeliveries')} aria-label={t('searchDeliveries')} />
+        <SelectInput value={status} onChange={(event) => setStatus(event.target.value)} aria-label={t('filterStatus')}>
+          <option value="all">{t('allStatuses')}</option>
+          <option value="pending">{t('statusPending')}</option>
+          <option value="approved">{t('statusApproved')}</option>
+          <option value="rejected">{t('statusRejected')}</option>
+          <option value="cancelled">{t('statusCancelled')}</option>
         </SelectInput>
       </div>
       <DataTable
         rows={rows}
         getRowId={(row) => row.id}
         resetKey={`${query}|${status}`}
-        emptyTitle="No deliveries"
+        emptyTitle={t('emptyDeliveries')}
         columns={[
-          { key: 'code', header: 'Code', render: (row) => row.code },
-          { key: 'supplier', header: 'Supplier', render: (row) => row.supplierName },
-          { key: 'date', header: 'Delivery', sortValue: (row) => row.deliveryDate, render: (row) => formatDate(row.deliveryDate) },
-          { key: 'units', header: 'Units', render: (row) => stockInUnits(row.items) },
-          { key: 'cost', header: 'Cost', className: 'hidden md:table-cell', render: (row) => app.money(stockInTotal(row.items)) },
-          { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
+          { key: 'code', header: t('codeCol'), render: (row) => row.code },
+          { key: 'supplier', header: t('supplierCol'), render: (row) => row.supplierName },
+          { key: 'date', header: t('deliveryCol'), sortValue: (row) => row.deliveryDate, render: (row) => formatDate(row.deliveryDate) },
+          { key: 'units', header: t('reportColUnits'), render: (row) => stockInUnits(row.items) },
+          { key: 'cost', header: t('pdfCost'), className: 'hidden md:table-cell', render: (row) => app.money(stockInTotal(row.items)) },
+          { key: 'status', header: t('labelStatus'), render: (row) => <StatusBadge status={row.status} /> },
           {
             key: 'open',
             header: '',
             render: (row) => (
               <span className="flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => setSelected(row)}>View</Button>
-                {(row.status === 'pending' || row.status === 'approved') && <Button size="sm" variant="secondary" onClick={() => navigate(`/admin/stock-in/edit?edit=${row.id}`)}>Edit</Button>}
+                <Button size="sm" variant="secondary" onClick={() => setSelected(row)}>{t('view')}</Button>
+                {(row.status === 'pending' || row.status === 'approved') && <Button size="sm" variant="secondary" onClick={() => navigate(`/admin/stock-in/edit?edit=${row.id}`)}>{t('edit')}</Button>}
               </span>
             ),
           },
         ]}
       />
-      <Modal open={Boolean(selected)} title="Delivery details" onClose={() => setSelected(null)} wide>
+      <Modal open={Boolean(selected)} title={t('deliveryDetails')} onClose={() => setSelected(null)} wide>
         {selected && <StockInDetail record={app.stockIns.find((item) => item.id === selected.id) ?? selected} mode="review" />}
       </Modal>
-      <Modal open={supplierOpen} title="Add supplier" onClose={() => setSupplierOpen(false)}>
+      <Modal open={supplierOpen} title={t('pageAddSupplier')} onClose={() => setSupplierOpen(false)}>
         <form
           className="space-y-4"
           onSubmit={async (event) => {
@@ -112,9 +112,9 @@ export function StockInPage() {
             }
           }}
         >
-          <Field label="Name"><TextInput value={supplierName} onChange={(event) => setSupplierName(event.target.value)} required /></Field>
-          <Field label="Phone"><TextInput value={supplierPhone} onChange={(event) => setSupplierPhone(event.target.value)} /></Field>
-          <Button type="submit" variant="gold">Save supplier</Button>
+          <Field label={t('fieldName')}><TextInput value={supplierName} onChange={(event) => setSupplierName(event.target.value)} required /></Field>
+          <Field label={t('phone')}><TextInput value={supplierPhone} onChange={(event) => setSupplierPhone(event.target.value)} /></Field>
+          <Button type="submit" variant="gold">{t('saveSupplier')}</Button>
         </form>
       </Modal>
       <ConfirmDialog

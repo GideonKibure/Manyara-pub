@@ -2,6 +2,7 @@ import {
   BarChart3,
   Bell,
   Boxes,
+  ClipboardCheck,
   ClipboardList,
   Gamepad2,
   House,
@@ -48,6 +49,7 @@ export function AdminLayout() {
         { to: '/admin/expenses', label: t('navExpenses'), icon: Wallet },
         { to: '/admin/activities', label: t('navActivities'), icon: Gamepad2 },
         { to: '/admin/inventory', label: t('navInventory'), icon: Boxes },
+        { to: '/admin/remaining', label: t('navRemaining'), icon: ClipboardCheck },
       ],
     },
     {
@@ -98,7 +100,10 @@ export function EmployeeLayout() {
     { to: '/employee/notifications', label: t('navNotifications'), icon: Bell, badge: unreadCount },
     { to: '/employee/profile', label: t('navProfile'), icon: UserRound },
   ]
-  const sections: NavSection[] = [{ label: t('navYourWork'), items }]
+  const sections: NavSection[] = [
+    { label: t('remainSection'), items: [{ to: '/employee/remaining', label: t('navRemaining'), icon: ClipboardCheck }] },
+    { label: t('navYourWork'), items },
+  ]
   return (
     <AppShell
       sections={sections}

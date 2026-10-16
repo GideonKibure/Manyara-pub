@@ -460,3 +460,99 @@ export function buildReport(db: Database, filters: ReportFilters): ReportData {
     costIncomplete,
   }
 }
+
+export interface DayStatement {
+  date: string
+  sold: Array<{ name: string; units: number; revenue: number; cost: number; profit: number }>
+  bought: Array<{ name: string; units: number; cost: number }>
+  expenses: Array<{ description: string; amount: number }>
+  otherIncome: Array<{ name: string; amount: number }>
+  salesRevenue: number
+  goodsCost: number
+  goodsProfit: number
+  otherIncomeTotal: number
+  expensesTotal: number
+  net: number
+  available: Array<{ name: string; available: number; minimum: number; buy: number }>
+  toBuy: Array<{ name: string; available: number; minimum: number; buy: number }>
+}
+
+export function buildDayStatement(db: Database, day: string): DayStatement {
+  const soldMap = new Map<string, { name: string; units: number; revenue: number; cost: number; profit: number }>()
+  let salesRevenue = 0
+  let goodsCost = 0
+  for (const sale of approvedSales(db)) {
+    if (asDateKey(sale.reviewedAt ?? sale.submittedAt) !== day) continue
+    if (typeof sale.settledAmount === 'number') {
+      salesRevenue += sale.settledAmount
+      const label = sale.customerName ? `Bill payment · ${sale.customerName}` : 'Bill payment'
+      const current = soldMap.get(label) ?? { name: label, units: 0, revenue: 0, cost: 0, profit: 0 }
+      current.revenue += sale.settledAmount
+      current.profit += sale.settledAmount
+      soldMap.set(label, current)
+      continue
+    }
+    for (const item of sale.items) {
+      const product = db.products.find((entry) => entry.id === item.productId)
+      const name = product?.name ?? 'Product'
+      const current = soldMap.get(item.productId) ?? { name, units: 0, revenue: 0, cost: 0, profit: 0 }
+      current.units += item.quantity
+      current.revenue += item.quantity * item.unitPrice
+      current.cost += item.quantity * item.unitCost
+      current.profit = current.revenue - current.cost
+      soldMap.set(item.productId, current)
+      salesRevenue += item.quantity * item.unitPrice
+      goodsCost += item.quantity * item.unitCost
+    }
+  }
+
+  const boughtMap = new Map<string, { name: string; units: number; cost: number }>()
+  for (const entry of db.stockIns) {
+    if (entry.status !== 'approved' || entry.deliveryDate !== day) continue
+    for (const item of entry.items) {
+      const product = db.products.find((row) => row.id === item.productId)
+      const name = product?.name ?? 'Product'
+      const current = boughtMap.get(item.productId) ?? { name, units: 0, cost: 0 }
+      current.units += item.stockQuantity
+      current.cost += item.totalCost
+      boughtMap.set(item.productId, current)
+    }
+  }
+
+  const expenses = db.expenses
+    .filter((item) => item.status === 'approved' && item.spentOn === day)
+    .map((item) => ({ description: item.description, amount: item.amount }))
+  const otherIncome = db.activities
+    .filter((item) => item.status === 'approved' && asDateKey(item.occurredAt) === day)
+    .map((item) => ({
+      name: db.activityTypes.find((type) => type.id === item.activityTypeId)?.name ?? 'Activity',
+      amount: item.amount,
+    }))
+  const expensesTotal = expenses.reduce((sum, item) => sum + item.amount, 0)
+  const otherIncomeTotal = otherIncome.reduce((sum, item) => sum + item.amount, 0)
+  const goodsProfit = salesRevenue - goodsCost
+  const available = db.products
+    .filter((product) => product.isActive)
+    .map((product) => {
+      const snap = snapshotFor(db, product.id)
+      const buy = Math.max(0, product.minStock - snap.available)
+      return { name: product.name, available: snap.available, minimum: product.minStock, buy }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  return {
+    date: day,
+    sold: [...soldMap.values()].sort((a, b) => b.revenue - a.revenue),
+    bought: [...boughtMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    expenses,
+    otherIncome,
+    salesRevenue,
+    goodsCost,
+    goodsProfit,
+    otherIncomeTotal,
+    expensesTotal,
+    net: goodsProfit + otherIncomeTotal - expensesTotal,
+    available,
+    toBuy: available.filter((row) => row.buy > 0),
+  }
+}

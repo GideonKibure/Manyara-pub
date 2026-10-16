@@ -36,12 +36,12 @@ export function ExpensesPage() {
       />
       <div className="mb-4 grid gap-3 md:grid-cols-2">
         <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('expenseWhat')} aria-label={t('expenseWhat')} />
-        <SelectInput value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Status">
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="cancelled">Cancelled</option>
+        <SelectInput value={status} onChange={(event) => setStatus(event.target.value)} aria-label={t('labelStatus')}>
+          <option value="all">{t('allStatuses')}</option>
+          <option value="pending">{t('statusPending')}</option>
+          <option value="approved">{t('statusApproved')}</option>
+          <option value="rejected">{t('statusRejected')}</option>
+          <option value="cancelled">{t('statusCancelled')}</option>
         </SelectInput>
       </div>
       <DataTable
@@ -50,13 +50,13 @@ export function ExpensesPage() {
         resetKey={`${query}|${status}`}
         emptyTitle={t('pageExpensesEmpty')}
         columns={[
-          { key: 'code', header: 'Code', render: (row) => row.code },
+          { key: 'code', header: t('codeCol'), render: (row) => row.code },
           { key: 'what', header: t('expenseWhat'), render: (row) => row.description },
           { key: 'amount', header: t('expenseAmount'), sortValue: (row) => row.amount, render: (row) => app.money(row.amount) },
           { key: 'when', header: t('expenseDate'), sortValue: (row) => row.spentOn, render: (row) => formatDate(row.spentOn) },
-          { key: 'employee', header: 'Employee', className: 'hidden md:table-cell', render: (row) => app.nameOf(row.submittedBy) },
-          { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-          { key: 'open', header: '', render: (row) => <Button size="sm" variant="secondary" onClick={() => setSelected(row)}>View</Button> },
+          { key: 'employee', header: t('navEmployees'), className: 'hidden md:table-cell', render: (row) => app.nameOf(row.submittedBy) },
+          { key: 'status', header: t('labelStatus'), render: (row) => <StatusBadge status={row.status} /> },
+          { key: 'open', header: '', render: (row) => <Button size="sm" variant="secondary" onClick={() => setSelected(row)}>{t('view')}</Button> },
         ]}
       />
       <Modal open={Boolean(selected)} title={selected?.code ?? t('pageExpenses')} onClose={() => setSelected(null)} wide>

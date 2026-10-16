@@ -25,6 +25,7 @@ import { NotificationsPage as EmployeeNotificationsPage } from '@/pages/employee
 import { OrdersPage } from '@/pages/employee/OrdersPage'
 import { ProfilePage } from '@/pages/employee/ProfilePage'
 import { SalesPage as EmployeeSalesPage } from '@/pages/employee/SalesPage'
+import { RemainingStockPage } from '@/pages/employee/RemainingStockPage'
 import { StockInPage as EmployeeStockInPage } from '@/pages/employee/StockInPage'
 import { SubmissionsPage } from '@/pages/employee/SubmissionsPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
@@ -76,6 +77,7 @@ export function AppRouter() {
             <Route path="/admin/bills/edit" element={<EmployeeSalesPage kind="bill" />} />
             <Route path="/admin/approvals" element={<ApprovalsPage />} />
             <Route path="/admin/inventory" element={<InventoryPage />} />
+            <Route path="/admin/remaining" element={<RemainingStockPage />} />
             <Route path="/admin/expenses" element={<AdminExpensesPage />} />
             <Route path="/admin/expenses/new" element={<EmployeeExpensesPage />} />
             <Route path="/admin/activities" element={<AdminActivitiesPage />} />
@@ -91,6 +93,7 @@ export function AppRouter() {
           <Route element={<EmployeeLayout />}>
             <Route path="/employee/dashboard" element={<EmployeeDashboardPage />} />
             <Route path="/employee/stock-in" element={<EmployeeStockInPage />} />
+            <Route path="/employee/remaining" element={<RemainingStockPage />} />
             <Route path="/employee/sales" element={<EmployeeSalesPage kind="sale" />} />
             <Route path="/employee/bills" element={<EmployeeSalesPage kind="bill" />} />
             <Route path="/employee/expenses" element={<EmployeeExpensesPage />} />

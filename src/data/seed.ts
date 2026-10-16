@@ -411,6 +411,7 @@ export function buildSeed(): Database {
       currency: 'TZS',
       currencySymbol: 'TSh',
       lowStockAlerts: true,
+      allowRemainingCount: false,
       updatedAt: created,
     },
     counters: { stockIn: stockInCount, sale: saleCount, activity: activityCount, expense: 1, adjustment: adjustmentCount },

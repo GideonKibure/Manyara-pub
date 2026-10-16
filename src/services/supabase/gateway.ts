@@ -34,6 +34,7 @@ import {
   recordBillPayment,
   appendBillItem,
   submitSale,
+  submitRemainingCount as submitRemainingCountRemoteRpc,
   submitStockIn,
   updateSale,
   updateStockIn,
@@ -74,7 +75,7 @@ export function errorText(error: { message?: string } | null, fallback = 'Someth
   const raw = error?.message?.trim()
   if (!raw) return fallback
   if (/schema cache|does not exist|Could not find the function|relation .* does not exist/i.test(raw)) {
-    return 'The Supabase project is missing a Manyara Pub table or function. Run the SQL files in supabase/migrations in order, from 001 through 022, in the SQL editor.'
+    return 'The Supabase project is missing a Manyara Pub table or function. Run supabase/migrations/001_initial.sql if this is a new project, then paste and run 023_live_catchup.sql through 027_remaining_report_notice.sql in the SQL editor.'
   }
   if (/duplicate key/i.test(raw) && /username/i.test(raw)) return 'That username is already in use.'
   if (/duplicate key/i.test(raw) && /email/i.test(raw)) return 'That email address is already in use.'
@@ -148,6 +149,7 @@ export function blankDatabase(): Database {
       currency: 'TZS',
       currencySymbol: 'TSh',
       lowStockAlerts: true,
+      allowRemainingCount: false,
       updatedAt: new Date().toISOString(),
     },
     counters: { stockIn: 0, sale: 0, activity: 0, expense: 0, adjustment: 0 },
@@ -499,6 +501,7 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
             currency: str(settingsRow, 'currency', 'TZS'),
             currencySymbol: str(settingsRow, 'currency_symbol', 'TSh'),
             lowStockAlerts: settingsRow.low_stock_alerts !== false,
+            allowRemainingCount: settingsRow.allow_remaining_count === true,
             updatedAt: str(settingsRow, 'updated_at'),
           }
         : base.settings,
@@ -767,6 +770,12 @@ export async function sendSaleRemote(draft: SaleDraft): Promise<ActionResult> {
   return { ok: true, message: 'Sale recorded. Confirmed stock was updated.' }
 }
 
+export async function sendRemainingCountRemote(lines: Array<{ productId: string; remaining: number }>): Promise<ActionResult> {
+  const result = await submitRemainingCountRemoteRpc({ items: lines })
+  if (result.error) return fail(errorText(result.error))
+  return { ok: true, message: 'Remaining stock was recorded as sales. Confirmed stock was updated.' }
+}
+
 export async function editSaleRemote(id: string, draft: SaleDraft): Promise<ActionResult> {
   const result = await updateSale(id, {
     items: draft.items,
@@ -852,7 +861,7 @@ export async function adjustRemote(draft: AdjustmentDraft): Promise<ActionResult
   return { ok: true, message: `${String(result.data ?? 'Adjustment')} recorded.` }
 }
 
-export async function saveSettingsRemote(input: { businessName: string; currency: string; currencySymbol: string; lowStockAlerts: boolean }): Promise<ActionResult> {
+export async function saveSettingsRemote(input: { businessName: string; currency: string; currencySymbol: string; lowStockAlerts: boolean; allowRemainingCount: boolean }): Promise<ActionResult> {
   const parsed = settingsSchema.safeParse(input)
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? 'Check the settings.')
   const { error } = await client()
@@ -862,6 +871,7 @@ export async function saveSettingsRemote(input: { businessName: string; currency
       currency: parsed.data.currency,
       currency_symbol: parsed.data.currencySymbol,
       low_stock_alerts: parsed.data.lowStockAlerts,
+      allow_remaining_count: parsed.data.allowRemainingCount,
     })
     .eq('id', 1)
   if (error) return fail(errorText(error))

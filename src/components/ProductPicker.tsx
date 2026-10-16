@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { Product, StockSnapshot } from '@/types'
 import { StockBadge } from '@/components/ui/Feedback'
 import { useI18n } from '@/i18n/LanguageContext'
@@ -37,10 +37,23 @@ export function PersonPhoto({ src, name, className }: { src?: string; name: stri
 }
 
 export function ProductThumb({ src, name, className }: { src?: string; name: string; className?: string }) {
+  const [ready, setReady] = useState(false)
   if (!src) {
     return <span className={cn('grid place-items-center rounded-lg bg-stone-200 text-sm font-semibold text-stone-600', className)}>{name.slice(0, 1).toUpperCase()}</span>
   }
-  return <img src={src} alt="" className={cn('rounded-lg object-cover', className)} />
+  return (
+    <span className={cn('relative overflow-hidden rounded-lg bg-stone-200', className)}>
+      {!ready && <span className="thumb-shimmer absolute inset-0" aria-hidden="true" />}
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setReady(true)}
+        className={cn('h-full w-full object-cover transition-opacity duration-500', ready ? 'opacity-100' : 'opacity-0')}
+      />
+    </span>
+  )
 }
 
 export function ProductPicker({

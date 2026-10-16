@@ -39,6 +39,7 @@ import {
   setBillPaymentRemote,
   recordBillPaymentRemote,
   appendBillItemRemote,
+  sendRemainingCountRemote,
   signInRemote,
   signOutRemote,
   updateEmployeeRemote,
@@ -78,6 +79,7 @@ import {
   submitActivity,
   submitExpense,
   submitSale,
+  submitRemainingCount,
   submitStockIn,
   updateActivityType,
   updateCategory,
@@ -102,6 +104,7 @@ import type {
   StockInDraft,
 } from '@/types'
 import { formatMoney } from '@/utils/money'
+import { BootScreen, LoadErrorScreen } from '@/components/ui/BootScreen'
 
 interface Toast {
   id: string
@@ -157,6 +160,7 @@ interface AppContextValue {
   ) => Promise<ActionResult>
   sendStockIn: (draft: StockInDraft) => Promise<ActionResult>
   sendSale: (draft: SaleDraft) => Promise<ActionResult>
+  sendRemainingCount: (lines: Array<{ productId: string; remaining: number }>) => Promise<ActionResult>
   editStockIn: (id: string, draft: StockInDraft) => Promise<ActionResult>
   editSale: (id: string, draft: SaleDraft) => Promise<ActionResult>
   setBillPayment: (id: string, paymentStatus: 'paid' | 'unpaid') => Promise<ActionResult>
@@ -175,7 +179,7 @@ interface AppContextValue {
   declineExpense: (id: string, reason: string) => Promise<ActionResult>
   withdraw: (kind: 'stock_in' | 'sale' | 'activity' | 'expense', id: string, reason: string) => Promise<ActionResult>
   adjust: (draft: AdjustmentDraft) => Promise<ActionResult>
-  saveSettings: (input: { businessName: string; currency: string; currencySymbol: string; lowStockAlerts: boolean }) => Promise<ActionResult>
+  saveSettings: (input: { businessName: string; currency: string; currencySymbol: string; lowStockAlerts: boolean; allowRemainingCount: boolean }) => Promise<ActionResult>
   saveActivityType: (
     id: string,
     input: { pricingMode: 'per_game' | 'per_session' | 'per_play' | 'flat'; unitPrice: number; unitLabel: string; isActive: boolean },
@@ -568,6 +572,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     editEmployee: async (id, patch) => (remote ? runRemote(() => updateEmployeeRemote(id, patch)) : run((database, userId) => updateEmployee(database, userId, id, patch))),
     sendStockIn: async (draft) => (remote ? runRemote(() => sendStockInRemote(draft)) : run((database, userId) => submitStockIn(database, userId, draft))),
     sendSale: async (draft) => (remote ? runRemote(() => sendSaleRemote(draft)) : run((database, userId) => submitSale(database, userId, draft))),
+    sendRemainingCount: async (lines) => (remote ? runRemote(() => sendRemainingCountRemote(lines)) : run((database, userId) => submitRemainingCount(database, userId, lines))),
     editStockIn: async (id, draft) => (remote ? runRemote(() => editStockInRemote(id, draft)) : run((database, userId) => editStockIn(database, userId, id, draft))),
     editSale: async (id, draft) => (remote ? runRemote(() => editSaleRemote(id, draft)) : run((database, userId) => editSale(database, userId, id, draft))),
     setBillPayment: async (id, paymentStatus) => (remote ? runRemote(() => setBillPaymentRemote(id, paymentStatus)) : run((database, userId) => setBillPayment(database, userId, id, paymentStatus))),
@@ -602,32 +607,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   if (!authReady) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-paper px-6 text-center text-ink">
-        <p className="text-sm">Loading Manyara Pub…</p>
-      </div>
-    )
+    return <BootScreen />
   }
 
   if (loadError) {
     return (
-      <div className="grid min-h-screen place-items-center bg-paper px-6 text-center text-ink">
-        <div className="max-w-md">
-          <p className="text-lg font-semibold">Supabase could not be loaded</p>
-          <p className="mt-2 text-sm leading-6 text-stone-600">{loadError}</p>
-          <button
-            className="mt-4 rounded-lg bg-charcoal px-4 py-2 text-sm text-white"
-            onClick={() => {
-              void signOutRemote()
-              setLoadError('')
-              sessionRef.current = null
-              setSession(null)
-            }}
-          >
-            Back to sign in
-          </button>
-        </div>
-      </div>
+      <LoadErrorScreen
+        error={loadError}
+        onBack={() => {
+          void signOutRemote()
+          setLoadError('')
+          sessionRef.current = null
+          setSession(null)
+        }}
+      />
     )
   }
 

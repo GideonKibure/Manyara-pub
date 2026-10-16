@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Bell, LogOut, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
+import { BrandLogo } from '@/components/BrandLogo'
 import { Button } from '@/components/ui/Button'
 import { PersonPhoto, productFromNotice, ProductThumb } from '@/components/ProductPicker'
 import { noticeGroups, noticesIn } from '@/features/notifications/groups'
@@ -112,7 +113,7 @@ export function AppShell({
     return (
     <div className="flex h-full flex-col">
       <div className={cn('flex items-center gap-3 px-4 py-5', compact && 'justify-center px-2', glass && 'pt-[max(1.25rem,env(safe-area-inset-top))]')}>
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-amber-700 font-display text-lg text-white shadow-md shadow-amber-900/20">M</div>
+        <BrandLogo className={cn('shrink-0', compact ? 'h-11 w-11' : 'h-12 w-12')} alt={settings.businessName} />
         {!compact && (
           <div className="min-w-0 flex-1">
             <p className={cn('font-display text-lg leading-tight', glass ? 'text-ink' : 'text-white')}>{settings.businessName}</p>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ProductPicker, ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, TextArea, TextInput } from '@/components/ui/Fields'
@@ -62,6 +62,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
   const source = editing ?? corrects
   const recordKind: RecordKind = source?.recordKind ?? kind
   const isBill = recordKind === 'bill'
+  const remainingMode = app.user?.role !== 'admin' && app.settings.allowRemainingCount
   const employeeSale = app.user?.role !== 'admin' && !isBill && !editing && !corrects
   const employeeBill = app.user?.role !== 'admin' && isBill && !editing && !corrects
   const employeeEach = employeeSale || employeeBill
@@ -541,6 +542,20 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     setExtraQty(null)
     setExtraSize('one')
     setExtraPortion('full')
+  }
+
+  if (remainingMode && employeeSale) {
+    return (
+      <div className="space-y-4">
+        <PageHeader title={t('salesRecordTitle')} description={t('salesBlockedBody')} />
+        <Panel className="space-y-4">
+          <p className="text-sm leading-6 text-stone-600">{t('salesBlockedBody')}</p>
+          <Link to="/employee/remaining" className="inline-flex rounded-2xl bg-amber-700 px-4 py-3 text-sm font-semibold text-white">
+            {t('navRemaining')}
+          </Link>
+        </Panel>
+      </div>
+    )
   }
 
   return (

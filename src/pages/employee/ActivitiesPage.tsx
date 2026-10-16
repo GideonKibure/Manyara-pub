@@ -44,7 +44,7 @@ export function ActivitiesPage() {
     <div>
       <PageHeader title={t('pageRecordActivity')} description={t('pageRecordActivityBody')} />
       <Panel className="max-w-xl space-y-4">
-        <Field label="Activity">
+        <Field label={t('fieldActivity')}>
           <SelectInput value={activityTypeId} onChange={(event) => {
             const next = event.target.value
             setActivityTypeId(next)
@@ -55,18 +55,18 @@ export function ActivitiesPage() {
           </SelectInput>
         </Field>
         {selected && <p className="text-sm text-stone-600">{pricingLabel(selected.pricingMode)} at {app.money(selected.unitPrice)} per {selected.unitLabel}. Suggested collection {app.money(suggested)}.</p>}
-        <Field label={`Quantity (${selected?.unitLabel ?? 'units'})`}><NumberInput value={quantity} onValueChange={setQuantity} /></Field>
-        <Field label="Amount collected"><NumberInput value={amount} onValueChange={setAmount} /></Field>
-        <Field label="Payment method">
+        <Field label={`${t('fieldQuantity')} (${selected?.unitLabel ?? t('remainUnits')})`}><NumberInput value={quantity} onValueChange={setQuantity} /></Field>
+        <Field label={t('fieldAmount')}><NumberInput value={amount} onValueChange={setAmount} /></Field>
+        <Field label={t('fieldPayment')}>
           <SelectInput value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}>
-            <option value="cash">Cash</option>
-            <option value="mobile_money">Mobile money</option>
-            <option value="card">Card</option>
-            <option value="other">Other</option>
+            <option value="cash">{t('payCash')}</option>
+            <option value="mobile_money">{t('payMobile')}</option>
+            <option value="card">{t('payCard')}</option>
+            <option value="other">{t('payOther')}</option>
           </SelectInput>
         </Field>
-        <Field label="Date and time"><TextInput type="datetime-local" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} /></Field>
-        <Field label="Notes"><TextArea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
+        <Field label={t('fieldDateTime')}><TextInput type="datetime-local" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} /></Field>
+        <Field label={t('fieldNotes')}><TextArea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
         <Button variant="gold" loading={loading} disabled={quantity == null || amount == null} onClick={async () => {
           if (quantity == null || amount == null) return
           setLoading(true)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ClipboardList, PackagePlus, Receipt, ScrollText, ShoppingCart, Wallet } from 'lucide-react'
+import { ClipboardCheck, ClipboardList, PackagePlus, Receipt, ScrollText, ShoppingCart, Wallet } from 'lucide-react'
 import { ProductThumb } from '@/components/ProductPicker'
 import { StockBadge } from '@/components/ui/Feedback'
 import { useApp } from '@/context/AppContext'
@@ -72,6 +72,7 @@ export function DashboardPage() {
     { to: '/employee/bills', title: t('dashBill'), body: t('dashBillBody'), icon: Receipt },
     { to: '/employee/expenses', title: t('dashExpense'), body: t('dashExpenseBody'), icon: Wallet },
     { to: '/employee/submissions', title: t('dashHistory'), body: t('dashHistoryBody'), icon: ClipboardList },
+    { to: '/employee/remaining', title: t('navRemaining'), body: t('remainBody'), icon: ClipboardCheck },
   ]
 
   return (

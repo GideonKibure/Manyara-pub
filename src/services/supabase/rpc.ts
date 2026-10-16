@@ -70,6 +70,11 @@ export async function removeSupplier(id: string) {
   return client.rpc('remove_supplier', { p_id: id })
 }
 
+export async function clearBusinessData() {
+  const client = await requireClient()
+  return client.rpc('clear_business_data')
+}
+
 export async function submitStockIn(payload: Record<string, unknown>) {
   const client = await requireClient()
   return client.rpc('submit_stock_in', { p_payload: payload })

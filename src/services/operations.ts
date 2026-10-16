@@ -202,6 +202,19 @@ export function updateCategory(db: Database, userId: string, categoryId: string,
   return finish(audit({ ...db, categories }, userId, 'category.update', 'category', categoryId, `Updated category ${parsed.data.name}.`), 'Category updated.')
 }
 
+export function deleteCategory(db: Database, userId: string, categoryId: string): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const current = db.categories.find((category) => category.id === categoryId)
+  if (!current) return fail('Category not found.')
+  const used = db.products.filter((product) => product.categoryId === categoryId).length
+  if (used) return fail(`This category still has ${used} product${used === 1 ? '' : 's'}. Move or delete those products first.`)
+  return finish(
+    audit({ ...db, categories: db.categories.filter((category) => category.id !== categoryId) }, userId, 'category.delete', 'category', categoryId, `Deleted category ${current.name}.`),
+    'Category deleted.',
+  )
+}
+
 export function createUnit(db: Database, userId: string, input: { name: string; abbreviation: string }): OpResult {
   const adminCheck = requireAdmin(db, userId)
   if (!adminCheck.ok) return adminCheck
@@ -210,6 +223,19 @@ export function createUnit(db: Database, userId: string, input: { name: string; 
   if (db.units.some((unit) => unit.name.toLowerCase() === parsed.data.name.toLowerCase())) return fail('That unit already exists.')
   const unit = { id: uid(), name: parsed.data.name, abbreviation: parsed.data.abbreviation }
   return finish(audit({ ...db, units: [...db.units, unit] }, userId, 'unit.create', 'unit', unit.id, `Added unit ${unit.name}.`), 'Unit added.')
+}
+
+export function deleteUnit(db: Database, userId: string, unitId: string): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const current = db.units.find((unit) => unit.id === unitId)
+  if (!current) return fail('That unit could not be found.')
+  const used = db.products.filter((product) => product.stockUnitId === unitId || product.receiveUnitId === unitId).length
+  if (used) return fail(`This unit is still used by ${used} product${used === 1 ? '' : 's'}. Change those products first.`)
+  return finish(
+    audit({ ...db, units: db.units.filter((unit) => unit.id !== unitId) }, userId, 'unit.delete', 'unit', unitId, `Deleted unit ${current.name}.`),
+    'Unit deleted.',
+  )
 }
 
 export function createSupplier(db: Database, userId: string, input: { name: string; phone: string }): OpResult {
@@ -310,6 +336,64 @@ export function updateProduct(db: Database, userId: string, productId: string, i
       : product,
   )
   return finish(audit({ ...db, products }, userId, 'product.update', 'product', productId, `Updated prices for ${current.name}.`), 'Prices updated.')
+}
+
+function productHasHistory(db: Database, productId: string) {
+  return (
+    db.sales.some((sale) => sale.items.some((item) => item.productId === productId)) ||
+    db.stockIns.some((entry) => entry.items.some((item) => item.productId === productId)) ||
+    db.movements.some((movement) => movement.productId === productId)
+  )
+}
+
+export function deleteProduct(db: Database, userId: string, productId: string): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const current = db.products.find((product) => product.id === productId)
+  if (!current) return fail('Product not found.')
+  if (productHasHistory(db, productId)) {
+    const products = db.products.map((product) =>
+      product.id === productId ? { ...product, isActive: false, updatedAt: now() } : product,
+    )
+    return finish(
+      audit({ ...db, products }, userId, 'product.deactivate', 'product', productId, `Turned ${current.name} inactive because it has sales or stock records.`),
+      'This product has sales or stock records, so it was turned inactive instead of deleted.',
+    )
+  }
+  const next: Database = {
+    ...db,
+    products: db.products.filter((product) => product.id !== productId),
+    availability: db.availability?.filter((row) => row.productId !== productId),
+    notifications: db.notifications.map((note) =>
+      note.dedupeKey === `low_stock:${productId}` || note.dedupeKey === `out_of_stock:${productId}`
+        ? { ...note, resolvedAt: now() }
+        : note,
+    ),
+  }
+  return finish(audit(next, userId, 'product.delete', 'product', productId, `Deleted product ${current.name}.`), 'Product deleted.')
+}
+
+export function clearBusinessData(db: Database, userId: string): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const next: Database = {
+    ...db,
+    products: [],
+    suppliers: [],
+    stockIns: [],
+    sales: [],
+    movements: [],
+    activities: [],
+    expenses: [],
+    notifications: [],
+    auditLogs: [],
+    availability: [],
+    counters: { stockIn: 0, sale: 0, activity: 0, expense: 0, adjustment: 0 },
+  }
+  return finish(
+    audit(next, userId, 'business.clear', 'settings', 'all', 'Cleared business operational data.'),
+    'Business data cleared. Accounts, categories, units, and settings were kept.',
+  )
 }
 
 export function createEmployee(db: Database, userId: string, input: EmployeeDraft): OpResult {

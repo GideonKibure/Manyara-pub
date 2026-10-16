@@ -25,6 +25,10 @@ import {
   saveCategoryRemote,
   saveEmployeeRemote,
   saveProductRemote,
+  deleteProductRemote,
+  deleteCategoryRemote,
+  deleteUnitRemote,
+  clearBusinessDataRemote,
   saveProfileRemote,
   saveSettingsRemote,
   removeSupplierRemote,
@@ -58,6 +62,10 @@ import {
   createCategory,
   createEmployee,
   createProduct,
+  deleteProduct,
+  deleteCategory,
+  deleteUnit,
+  clearBusinessData,
   createSupplier,
   deleteSupplier,
   createUnit,
@@ -148,11 +156,15 @@ interface AppContextValue {
   saveProfile: (input: { fullName: string; phone: string; imageUrl?: string }) => Promise<ActionResult>
   addCategory: (input: { name: string; description: string; isActive: boolean }) => Promise<ActionResult>
   editCategory: (id: string, input: { name: string; description: string; isActive: boolean }) => Promise<ActionResult>
+  removeCategory: (id: string) => Promise<ActionResult>
   addUnit: (input: { name: string; abbreviation: string }) => Promise<ActionResult>
+  removeUnit: (id: string) => Promise<ActionResult>
   addSupplier: (input: { name: string; phone: string }) => Promise<ActionResult>
   removeSupplier: (id: string) => Promise<ActionResult>
   addProduct: (input: ProductDraft) => Promise<ActionResult>
   editProduct: (id: string, input: ProductDraft) => Promise<ActionResult>
+  removeProduct: (id: string) => Promise<ActionResult>
+  clearBusiness: () => Promise<ActionResult>
   addEmployee: (input: EmployeeDraft) => Promise<ActionResult>
   editEmployee: (
     id: string,
@@ -563,11 +575,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveProfile: async (input) => (remote ? runRemote(() => saveProfileRemote(input)) : run((database, userId) => updateOwnProfile(database, userId, input))),
     addCategory: async (input) => (remote ? runRemote(() => saveCategoryRemote(null, input)) : run((database, userId) => createCategory(database, userId, input))),
     editCategory: async (id, input) => (remote ? runRemote(() => saveCategoryRemote(id, input)) : run((database, userId) => updateCategory(database, userId, id, input))),
+    removeCategory: async (id) => (remote ? runRemote(() => deleteCategoryRemote(id)) : run((database, userId) => deleteCategory(database, userId, id))),
     addUnit: async (input) => (remote ? runRemote(() => saveUnitRemote(input)) : run((database, userId) => createUnit(database, userId, input))),
+    removeUnit: async (id) => (remote ? runRemote(() => deleteUnitRemote(id)) : run((database, userId) => deleteUnit(database, userId, id))),
     addSupplier: async (input) => (remote ? runRemote(() => saveSupplierRemote(input)) : run((database, userId) => createSupplier(database, userId, input))),
     removeSupplier: async (id) => (remote ? runRemote(() => removeSupplierRemote(id)) : run((database, userId) => deleteSupplier(database, userId, id))),
     addProduct: async (input) => (remote ? runRemote(() => saveProductRemote(null, input)) : run((database, userId) => createProduct(database, userId, input))),
     editProduct: async (id, input) => (remote ? runRemote(() => saveProductRemote(id, input)) : run((database, userId) => updateProduct(database, userId, id, input))),
+    removeProduct: async (id) => (remote ? runRemote(() => deleteProductRemote(id)) : run((database, userId) => deleteProduct(database, userId, id))),
+    clearBusiness: async () => (remote ? runRemote(() => clearBusinessDataRemote()) : run((database, userId) => clearBusinessData(database, userId))),
     addEmployee: async (input) => (remote ? runRemote(() => saveEmployeeRemote(input)) : run((database, userId) => createEmployee(database, userId, input))),
     editEmployee: async (id, patch) => (remote ? runRemote(() => updateEmployeeRemote(id, patch)) : run((database, userId) => updateEmployee(database, userId, id, patch))),
     sendStockIn: async (draft) => (remote ? runRemote(() => sendStockInRemote(draft)) : run((database, userId) => submitStockIn(database, userId, draft))),

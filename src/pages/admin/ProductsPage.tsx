@@ -5,7 +5,7 @@ import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { Checkbox, Field, NumberInput, SelectInput, TextInput } from '@/components/ui/Fields'
 import { PageHeader, StockBadge } from '@/components/ui/Feedback'
-import { Modal } from '@/components/ui/Modal'
+import { ConfirmDialog, Modal } from '@/components/ui/Modal'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import { compileOffer, offerDraftFrom, SIZE_ORDER, type OfferDraft } from '@/features/products/offer'
@@ -39,6 +39,8 @@ export function ProductsPage() {
   const [status, setStatus] = useState('all')
   const [editing, setEditing] = useState<Product | null>(null)
   const [open, setOpen] = useState(false)
+  const [removing, setRemoving] = useState<Product | null>(null)
+  const [removingBusy, setRemovingBusy] = useState(false)
 
   const rows = useMemo(
     () =>
@@ -115,7 +117,10 @@ export function ProductsPage() {
                 <p className="text-sm leading-5 text-stone-600">{price}</p>
                 <div className="mt-auto flex items-center justify-between gap-2">
                   {snap && <StockBadge level={snap.level} />}
-                  <Button size="sm" variant="secondary" onClick={() => { setEditing(row); setOpen(true) }}>{t('productsEdit')}</Button>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => { setEditing(row); setOpen(true) }}>{t('productsEdit')}</Button>
+                    <Button size="sm" variant="danger" onClick={() => setRemoving(row)}>{t('productsDelete')}</Button>
+                  </div>
                 </div>
               </article>
             )
@@ -130,6 +135,23 @@ export function ProductsPage() {
           onClose={() => setOpen(false)}
         />
       )}
+      <ConfirmDialog
+        open={Boolean(removing)}
+        title={t('productsDeleteTitle')}
+        body={removing ? `${removing.name}. ${t('productsDeleteBody')}` : ''}
+        confirmLabel={t('productsDelete')}
+        cancelLabel={t('productsCancel')}
+        tone="danger"
+        loading={removingBusy}
+        onClose={() => setRemoving(null)}
+        onConfirm={async () => {
+          if (!removing) return
+          setRemovingBusy(true)
+          const result = await app.removeProduct(removing.id)
+          setRemovingBusy(false)
+          if (result.ok) setRemoving(null)
+        }}
+      />
     </div>
   )
 }

@@ -27,6 +27,7 @@ import {
   rejectSale,
   rejectStockIn,
   removeSupplier,
+  clearBusinessData as clearBusinessDataRpc,
   staffDirectory,
   submitActivity,
   submitExpense,
@@ -75,7 +76,7 @@ export function errorText(error: { message?: string } | null, fallback = 'Someth
   const raw = error?.message?.trim()
   if (!raw) return fallback
   if (/schema cache|does not exist|Could not find the function|relation .* does not exist/i.test(raw)) {
-    return 'The Supabase project is missing a Manyara Pub table or function. Run supabase/migrations/001_initial.sql if this is a new project, then paste and run 023_live_catchup.sql through 027_remaining_report_notice.sql in the SQL editor.'
+    return 'The Supabase project is missing a Manyara Pub table or function. Run supabase/migrations/001_initial.sql if this is a new project, then paste and run 023_live_catchup.sql through 028_clear_business_data.sql in the SQL editor.'
   }
   if (/duplicate key/i.test(raw) && /username/i.test(raw)) return 'That username is already in use.'
   if (/duplicate key/i.test(raw) && /email/i.test(raw)) return 'That email address is already in use.'
@@ -610,6 +611,38 @@ export async function removeSupplierRemote(id: string): Promise<ActionResult> {
   return { ok: true, message: 'Supplier removed.' }
 }
 
+export async function deleteCategoryRemote(id: string): Promise<ActionResult> {
+  const current = await client().from('categories').select('name').eq('id', id).maybeSingle()
+  if (current.error) return fail(errorText(current.error))
+  if (!current.data) return fail('Category not found.')
+  const used = await client().from('products').select('id').eq('category_id', id).limit(1)
+  if (used.error) return fail(errorText(used.error))
+  if (used.data?.length) return fail('This category still has products. Move or delete those products first.')
+  const result = await client().from('categories').delete().eq('id', id)
+  if (result.error) return fail(errorText(result.error))
+  await audit('category.delete', 'category', id, `Deleted category ${str(current.data as Row, 'name')}.`)
+  return { ok: true, message: 'Category deleted.' }
+}
+
+export async function deleteUnitRemote(id: string): Promise<ActionResult> {
+  const current = await client().from('units').select('name').eq('id', id).maybeSingle()
+  if (current.error) return fail(errorText(current.error))
+  if (!current.data) return fail('That unit could not be found.')
+  const used = await client().from('products').select('id').or(`stock_unit_id.eq.${id},receive_unit_id.eq.${id}`).limit(1)
+  if (used.error) return fail(errorText(used.error))
+  if (used.data?.length) return fail('This unit is still used by a product. Change those products first.')
+  const result = await client().from('units').delete().eq('id', id)
+  if (result.error) return fail(errorText(result.error))
+  await audit('unit.delete', 'unit', id, `Deleted unit ${str(current.data as Row, 'name')}.`)
+  return { ok: true, message: 'Unit deleted.' }
+}
+
+export async function clearBusinessDataRemote(): Promise<ActionResult> {
+  const result = await clearBusinessDataRpc()
+  if (result.error) return fail(errorText(result.error))
+  return { ok: true, message: 'Business data cleared. Accounts, categories, units, and settings were kept.' }
+}
+
 function productPayload(input: ProductDraft) {
   return {
     name: input.name,
@@ -670,6 +703,32 @@ export async function saveProductRemote(id: string | null, input: ProductDraft):
   const entityId = String((result.data as Row | null)?.id ?? '')
   await audit('product.create', 'product', entityId, `Created product ${parsed.data.name}.`)
   return { ok: true, message: 'Product created.' }
+}
+
+export async function deleteProductRemote(id: string): Promise<ActionResult> {
+  const current = await client().from('products').select('name').eq('id', id).maybeSingle()
+  if (current.error) return fail(errorText(current.error))
+  if (!current.data) return fail('Product not found.')
+  const name = str(current.data as Row, 'name')
+  const [sales, stock, movements] = await Promise.all([
+    client().from('sales_items').select('id').eq('product_id', id).limit(1),
+    client().from('stock_in_items').select('id').eq('product_id', id).limit(1),
+    client().from('inventory_movements').select('id').eq('product_id', id).limit(1),
+  ])
+  if (sales.error) return fail(errorText(sales.error))
+  if (stock.error) return fail(errorText(stock.error))
+  if (movements.error) return fail(errorText(movements.error))
+  const used = Boolean(sales.data?.length || stock.data?.length || movements.data?.length)
+  if (used) {
+    const result = await client().from('products').update({ is_active: false }).eq('id', id)
+    if (result.error) return fail(errorText(result.error))
+    await audit('product.deactivate', 'product', id, `Turned ${name} inactive because it has sales or stock records.`)
+    return { ok: true, message: 'This product has sales or stock records, so it was turned inactive instead of deleted.' }
+  }
+  const result = await client().from('products').delete().eq('id', id)
+  if (result.error) return fail(errorText(result.error))
+  await audit('product.delete', 'product', id, `Deleted product ${name}.`)
+  return { ok: true, message: 'Product deleted.' }
 }
 
 export async function saveEmployeeRemote(input: EmployeeDraft): Promise<ActionResult> {

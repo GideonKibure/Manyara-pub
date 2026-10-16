@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
 import { Checkbox, Field, TextInput } from '@/components/ui/Fields'
 import { PageHeader } from '@/components/ui/Feedback'
-import { Modal } from '@/components/ui/Modal'
+import { ConfirmDialog, Modal } from '@/components/ui/Modal'
 import { PersonName } from '@/components/ProductPicker'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
@@ -50,6 +50,20 @@ function AccessButtons({ profile }: { profile: Profile }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [prompt, setPrompt] = useState<'deactivate' | 'activate' | 'revoke' | 'allow' | 'photo' | null>(null)
+
+  const notice = prompt === 'deactivate'
+    ? { title: t('staffDeactivateTitle'), body: `${profile.fullName}. ${t('staffDeactivateBody')}`, label: t('deactivate'), patch: { isActive: false } }
+    : prompt === 'activate'
+      ? { title: t('staffActivateTitle'), body: `${profile.fullName}. ${t('staffActivateBody')}`, label: t('activate'), patch: { isActive: true } }
+      : prompt === 'revoke'
+        ? { title: t('staffRevokeTitle'), body: `${profile.fullName}. ${t('staffRevokeBody')}`, label: t('revokeActivities'), patch: { canSubmitActivities: false } }
+        : prompt === 'allow'
+          ? { title: t('staffAllowTitle'), body: `${profile.fullName}. ${t('staffAllowBody')}`, label: t('allowActivities'), patch: { canSubmitActivities: true } }
+          : prompt === 'photo'
+            ? { title: t('staffRemovePhotoTitle'), body: `${profile.fullName}. ${t('staffRemovePhotoBody')}`, label: t('staffRemovePhoto'), patch: { imageUrl: '' } }
+            : null
+
   return (
     <div className="flex flex-wrap gap-2">
       <input
@@ -74,10 +88,28 @@ function AccessButtons({ profile }: { profile: Profile }) {
         }}
       />
       <Button size="sm" variant="secondary" loading={busy} onClick={() => fileRef.current?.click()}>{profile.imageUrl ? t('staffChangePhoto') : t('staffPhoto')}</Button>
-      {profile.imageUrl && <Button size="sm" variant="secondary" onClick={() => editEmployee(profile.id, { imageUrl: '' })}>{t('staffRemovePhoto')}</Button>}
-      <Button size="sm" variant="secondary" onClick={() => editEmployee(profile.id, { isActive: !profile.isActive })}>{profile.isActive ? t('deactivate') : t('activate')}</Button>
-      <Button size="sm" variant="secondary" onClick={() => editEmployee(profile.id, { canSubmitActivities: !profile.canSubmitActivities })}>{profile.canSubmitActivities ? t('revokeActivities') : t('allowActivities')}</Button>
+      {profile.imageUrl && <Button size="sm" variant="secondary" onClick={() => setPrompt('photo')}>{t('staffRemovePhoto')}</Button>}
+      <Button size="sm" variant={profile.isActive ? 'danger' : 'secondary'} onClick={() => setPrompt(profile.isActive ? 'deactivate' : 'activate')}>{profile.isActive ? t('deactivate') : t('activate')}</Button>
+      <Button size="sm" variant="secondary" onClick={() => setPrompt(profile.canSubmitActivities ? 'revoke' : 'allow')}>{profile.canSubmitActivities ? t('revokeActivities') : t('allowActivities')}</Button>
       {error && <p className="basis-full text-sm text-rose-700">{error}</p>}
+      <ConfirmDialog
+        open={Boolean(notice)}
+        title={notice?.title ?? ''}
+        body={notice?.body ?? ''}
+        confirmLabel={notice?.label ?? t('save')}
+        tone={prompt === 'deactivate' || prompt === 'photo' ? 'danger' : 'primary'}
+        loading={busy}
+        onClose={() => setPrompt(null)}
+        onConfirm={async () => {
+          if (!notice) return
+          setBusy(true)
+          setError('')
+          const result = await editEmployee(profile.id, notice.patch)
+          setBusy(false)
+          if (!result.ok) setError(result.error)
+          else setPrompt(null)
+        }}
+      />
     </div>
   )
 }

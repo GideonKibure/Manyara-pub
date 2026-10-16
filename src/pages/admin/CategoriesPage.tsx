@@ -5,17 +5,19 @@ import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
 import { Checkbox, Field, TextArea, TextInput } from '@/components/ui/Fields'
 import { PageHeader } from '@/components/ui/Feedback'
-import { Modal } from '@/components/ui/Modal'
+import { ConfirmDialog, Modal } from '@/components/ui/Modal'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import { categorySchema, type CategoryValues } from '@/schemas'
 import type { Category } from '@/types'
 
 export function CategoriesPage() {
-  const { categories, products } = useApp()
+  const { categories, products, removeCategory } = useApp()
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Category | null>(null)
+  const [removing, setRemoving] = useState<Category | null>(null)
+  const [busy, setBusy] = useState(false)
   return (
     <div>
       <PageHeader
@@ -32,10 +34,35 @@ export function CategoriesPage() {
           { key: 'description', header: t('fieldDescription'), className: 'hidden md:table-cell', render: (row) => row.description || '—' },
           { key: 'products', header: t('navProducts'), render: (row) => products.filter((product) => product.categoryId === row.id).length },
           { key: 'status', header: t('labelStatus'), render: (row) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${row.isActive ? 'bg-emerald-100 text-emerald-950' : 'bg-stone-200 text-stone-700'}`}>{row.isActive ? t('fieldActive') : t('inactive')}</span> },
-          { key: 'actions', header: '', render: (row) => <Button size="sm" variant="secondary" onClick={() => { setEditing(row); setOpen(true) }}>{t('edit')}</Button> },
+          {
+            key: 'actions',
+            header: '',
+            render: (row) => (
+              <span className="flex flex-wrap justify-end gap-2">
+                <Button size="sm" variant="secondary" onClick={() => { setEditing(row); setOpen(true) }}>{t('edit')}</Button>
+                <Button size="sm" variant="danger" onClick={() => setRemoving(row)}>{t('categoryDelete')}</Button>
+              </span>
+            ),
+          },
         ]}
       />
       {open && <CategoryDialog category={editing} onClose={() => setOpen(false)} />}
+      <ConfirmDialog
+        open={Boolean(removing)}
+        title={t('categoryDeleteTitle')}
+        body={removing ? `${removing.name}. ${t('categoryDeleteBody')}` : ''}
+        confirmLabel={t('categoryDelete')}
+        tone="danger"
+        loading={busy}
+        onClose={() => setRemoving(null)}
+        onConfirm={async () => {
+          if (!removing) return
+          setBusy(true)
+          const result = await removeCategory(removing.id)
+          setBusy(false)
+          if (result.ok) setRemoving(null)
+        }}
+      />
     </div>
   )
 }

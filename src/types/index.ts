@@ -387,6 +387,17 @@ export interface EmployeeDraft {
   canViewStock: boolean
 }
 
+export interface EmployeePatch {
+  fullName?: string
+  phone?: string
+  username?: string
+  password?: string
+  isActive?: boolean
+  canSubmitActivities?: boolean
+  canViewStock?: boolean
+  imageUrl?: string
+}
+
 export interface AdjustmentDraft {
   productId: string
   direction: 'in' | 'out'

@@ -22,6 +22,7 @@ import type {
   AuditLog,
   Database,
   EmployeeDraft,
+  EmployeePatch,
   ExpenseDraft,
   ExpenseTransaction,
   InventoryMovement,
@@ -429,21 +430,29 @@ export function createEmployee(db: Database, userId: string, input: EmployeeDraf
   return finish(next, 'Employee account created.', { temporaryPassword: parsed.data.password })
 }
 
-export function updateEmployee(
-  db: Database,
-  userId: string,
-  employeeId: string,
-  patch: { fullName?: string; phone?: string; isActive?: boolean; canSubmitActivities?: boolean; canViewStock?: boolean; imageUrl?: string },
-): OpResult {
+export function updateEmployee(db: Database, userId: string, employeeId: string, patch: EmployeePatch): OpResult {
   const adminCheck = requireAdmin(db, userId)
   if (!adminCheck.ok) return adminCheck
   const current = db.profiles.find((profile) => profile.id === employeeId)
   if (!current || current.role !== 'employee') return fail('Employee not found.')
   if (patch.isActive === false && employeeId === userId) return fail('You cannot deactivate your own account.')
+  const username = patch.username?.trim().toLowerCase()
+  if (username) {
+    const parsed = employeeSchema.shape.username.safeParse(patch.username)
+    if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? 'Check the username.')
+    if (db.profiles.some((profile) => profile.id !== employeeId && profile.username.toLowerCase() === username)) {
+      return fail('That username is already in use.')
+    }
+  }
+  if (patch.password) {
+    const parsed = passwordSchema.safeParse(patch.password)
+    if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? 'Choose a stronger password.')
+  }
   const profile: Profile = {
     ...current,
     fullName: patch.fullName?.trim() || current.fullName,
     phone: patch.phone ?? current.phone,
+    username: username || current.username,
     isActive: patch.isActive ?? current.isActive,
     canSubmitActivities: patch.canSubmitActivities ?? current.canSubmitActivities,
     canViewStock: patch.canViewStock ?? current.canViewStock,
@@ -451,10 +460,47 @@ export function updateEmployee(
     updatedAt: now(),
   }
   if (profile.fullName.length < 2) return fail('Enter the employee name.')
-  return finish(
-    audit(replaceProfile(db, profile), userId, 'employee.update', 'profile', employeeId, `Updated access for ${profile.fullName}.`),
-    'Employee updated.',
+  let next = replaceProfile(db, profile)
+  if (patch.password) {
+    next = {
+      ...next,
+      accounts: next.accounts.map((account) => (account.profileId === employeeId ? { ...account, password: patch.password as string } : account)),
+    }
+  }
+  return finish(audit(next, userId, 'employee.update', 'profile', employeeId, `Updated employee ${profile.fullName}.`), 'Employee updated.')
+}
+
+function employeeHasRecords(db: Database, employeeId: string) {
+  return (
+    db.sales.some((item) => item.submittedBy === employeeId || item.reviewedBy === employeeId) ||
+    db.stockIns.some((item) => item.submittedBy === employeeId || item.reviewedBy === employeeId) ||
+    db.activities.some((item) => item.submittedBy === employeeId || item.reviewedBy === employeeId) ||
+    db.expenses.some((item) => item.submittedBy === employeeId || item.reviewedBy === employeeId) ||
+    db.movements.some((item) => item.createdBy === employeeId)
   )
+}
+
+export function deleteEmployee(db: Database, userId: string, employeeId: string): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  if (employeeId === userId) return fail('You cannot delete your own account.')
+  const current = db.profiles.find((profile) => profile.id === employeeId)
+  if (!current || current.role !== 'employee') return fail('Employee not found.')
+  if (employeeHasRecords(db, employeeId)) {
+    const profile = { ...current, isActive: false, updatedAt: now() }
+    return finish(
+      audit(replaceProfile(db, profile), userId, 'employee.deactivate', 'profile', employeeId, `Turned ${current.fullName} inactive because they have records.`),
+      'This employee has sales or stock records, so the account was turned inactive instead of deleted.',
+    )
+  }
+  const next: Database = {
+    ...db,
+    profiles: db.profiles.filter((profile) => profile.id !== employeeId),
+    accounts: db.accounts.filter((account) => account.profileId !== employeeId),
+    notifications: db.notifications.filter((note) => note.recipientId !== employeeId),
+    auditLogs: db.auditLogs.map((entry) => (entry.actorId === employeeId ? { ...entry, actorId: '' } : entry)),
+  }
+  return finish(audit(next, userId, 'employee.delete', 'profile', employeeId, `Deleted employee ${current.fullName}.`), 'Employee deleted.')
 }
 
 function assertCorrection(db: Database, userId: string, kind: 'stockIns' | 'sales' | 'activities' | 'expenses', correctsId?: string) {

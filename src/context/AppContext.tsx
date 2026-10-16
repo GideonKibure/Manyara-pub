@@ -47,6 +47,7 @@ import {
   signInRemote,
   signOutRemote,
   updateEmployeeRemote,
+  deleteEmployeeRemote,
   updatePasswordRemote,
   withdrawRemote,
 } from '@/services/supabase/gateway'
@@ -92,6 +93,7 @@ import {
   updateActivityType,
   updateCategory,
   updateEmployee,
+  deleteEmployee,
   updateOwnProfile,
   updateProduct,
   updateSettings,
@@ -105,6 +107,7 @@ import type {
   AppNotification,
   Database,
   EmployeeDraft,
+  EmployeePatch,
   ProductDraft,
   Profile,
   SaleDraft,
@@ -166,10 +169,8 @@ interface AppContextValue {
   removeProduct: (id: string) => Promise<ActionResult>
   clearBusiness: () => Promise<ActionResult>
   addEmployee: (input: EmployeeDraft) => Promise<ActionResult>
-  editEmployee: (
-    id: string,
-    patch: { fullName?: string; phone?: string; isActive?: boolean; canSubmitActivities?: boolean; canViewStock?: boolean; imageUrl?: string },
-  ) => Promise<ActionResult>
+  editEmployee: (id: string, patch: EmployeePatch) => Promise<ActionResult>
+  removeEmployee: (id: string) => Promise<ActionResult>
   sendStockIn: (draft: StockInDraft) => Promise<ActionResult>
   sendSale: (draft: SaleDraft) => Promise<ActionResult>
   sendRemainingCount: (lines: Array<{ productId: string; remaining: number }>) => Promise<ActionResult>
@@ -586,6 +587,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearBusiness: async () => (remote ? runRemote(() => clearBusinessDataRemote()) : run((database, userId) => clearBusinessData(database, userId))),
     addEmployee: async (input) => (remote ? runRemote(() => saveEmployeeRemote(input)) : run((database, userId) => createEmployee(database, userId, input))),
     editEmployee: async (id, patch) => (remote ? runRemote(() => updateEmployeeRemote(id, patch)) : run((database, userId) => updateEmployee(database, userId, id, patch))),
+    removeEmployee: async (id) => (remote ? runRemote(() => deleteEmployeeRemote(id)) : run((database, userId) => deleteEmployee(database, userId, id))),
     sendStockIn: async (draft) => (remote ? runRemote(() => sendStockInRemote(draft)) : run((database, userId) => submitStockIn(database, userId, draft))),
     sendSale: async (draft) => (remote ? runRemote(() => sendSaleRemote(draft)) : run((database, userId) => submitSale(database, userId, draft))),
     sendRemainingCount: async (lines) => (remote ? runRemote(() => sendRemainingCountRemote(lines)) : run((database, userId) => submitRemainingCount(database, userId, lines))),

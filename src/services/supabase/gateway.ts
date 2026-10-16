@@ -28,6 +28,8 @@ import {
   rejectStockIn,
   removeSupplier,
   clearBusinessData as clearBusinessDataRpc,
+  adminUpdateEmployee,
+  adminDeleteEmployee,
   staffDirectory,
   submitActivity,
   submitExpense,
@@ -51,6 +53,7 @@ import type {
   AppNotification,
   Database,
   EmployeeDraft,
+  EmployeePatch,
   InventoryMovement,
   NotifyChannel,
   Product,
@@ -76,7 +79,7 @@ export function errorText(error: { message?: string } | null, fallback = 'Someth
   const raw = error?.message?.trim()
   if (!raw) return fallback
   if (/schema cache|does not exist|Could not find the function|relation .* does not exist/i.test(raw)) {
-    return 'The Supabase project is missing a Manyara Pub table or function. Run supabase/migrations/001_initial.sql if this is a new project, then paste and run 023_live_catchup.sql through 028_clear_business_data.sql in the SQL editor.'
+    return 'The Supabase project is missing a Manyara Pub table or function. Run supabase/migrations/001_initial.sql if this is a new project, then paste and run 023_live_catchup.sql through 029_admin_employee.sql in the SQL editor.'
   }
   if (/UPDATE requires a WHERE clause|DELETE requires a WHERE clause/i.test(raw)) {
     return 'Clearing business data needs the latest SQL. Paste and run supabase/migrations/028_clear_business_data.sql in the Supabase SQL editor, then try again.'
@@ -779,10 +782,22 @@ export async function saveEmployeeRemote(input: EmployeeDraft): Promise<ActionRe
   }
 }
 
-export async function updateEmployeeRemote(
-  employeeId: string,
-  patch: { fullName?: string; phone?: string; isActive?: boolean; canSubmitActivities?: boolean; canViewStock?: boolean; imageUrl?: string },
-): Promise<ActionResult> {
+export async function updateEmployeeRemote(employeeId: string, patch: EmployeePatch): Promise<ActionResult> {
+  if (patch.username !== undefined || patch.password) {
+    const current = await client().from('profiles').select('full_name, phone, username').eq('id', employeeId).eq('role', 'employee').maybeSingle()
+    if (current.error) return fail(errorText(current.error))
+    if (!current.data) return fail('Employee not found.')
+    const row = current.data as Row
+    const result = await adminUpdateEmployee(
+      employeeId,
+      (patch.fullName ?? str(row, 'full_name')).trim(),
+      patch.phone ?? str(row, 'phone'),
+      (patch.username ?? str(row, 'username')).trim().toLowerCase(),
+      patch.password ?? '',
+    )
+    if (result.error) return fail(errorText(result.error))
+    return { ok: true, message: 'Employee updated.', meta: patch.password ? { temporaryPassword: patch.password } : undefined }
+  }
   const payload: Record<string, string | boolean | null> = {}
   if (patch.fullName !== undefined) payload.full_name = patch.fullName.trim()
   if (patch.phone !== undefined) payload.phone = patch.phone
@@ -795,6 +810,15 @@ export async function updateEmployeeRemote(
   if (error) return fail(errorText(error))
   await audit('employee.update', 'profile', employeeId, 'Updated employee access.')
   return { ok: true, message: 'Employee updated.' }
+}
+
+export async function deleteEmployeeRemote(id: string): Promise<ActionResult> {
+  const result = await adminDeleteEmployee(id)
+  if (result.error) return fail(errorText(result.error))
+  if (result.data === 'deactivated') {
+    return { ok: true, message: 'This employee has sales or stock records, so the account was turned inactive instead of deleted.' }
+  }
+  return { ok: true, message: 'Employee deleted.' }
 }
 
 export async function sendStockInRemote(draft: StockInDraft): Promise<ActionResult> {

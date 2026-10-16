@@ -125,6 +125,20 @@ export const employeeSchema = z.object({
   canViewStock: z.boolean(),
 })
 
+export const employeeEditSchema = z
+  .object({
+    fullName: employeeSchema.shape.fullName,
+    username: employeeSchema.shape.username,
+    phone: z.string().trim().max(30),
+    password: z.string(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.password) return
+    const parsed = passwordSchema.safeParse(value.password)
+    if (parsed.success) return
+    parsed.error.issues.forEach((issue) => ctx.addIssue({ ...issue, path: ['password'] }))
+  })
+
 export const settingsSchema = z.object({
   businessName: z.string().trim().min(2, 'Enter the business name').max(80),
   currency: z
@@ -162,4 +176,5 @@ export type LoginValues = z.infer<typeof loginSchema>
 export type ProductValues = z.infer<typeof productSchema>
 export type CategoryValues = z.infer<typeof categorySchema>
 export type EmployeeValues = z.infer<typeof employeeSchema>
+export type EmployeeEditValues = z.infer<typeof employeeEditSchema>
 export type SettingsValues = z.infer<typeof settingsSchema>

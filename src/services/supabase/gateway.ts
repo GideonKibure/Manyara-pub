@@ -78,6 +78,9 @@ export function errorText(error: { message?: string } | null, fallback = 'Someth
   if (/schema cache|does not exist|Could not find the function|relation .* does not exist/i.test(raw)) {
     return 'The Supabase project is missing a Manyara Pub table or function. Run supabase/migrations/001_initial.sql if this is a new project, then paste and run 023_live_catchup.sql through 028_clear_business_data.sql in the SQL editor.'
   }
+  if (/UPDATE requires a WHERE clause|DELETE requires a WHERE clause/i.test(raw)) {
+    return 'Clearing business data needs the latest SQL. Paste and run supabase/migrations/028_clear_business_data.sql in the Supabase SQL editor, then try again.'
+  }
   if (/duplicate key/i.test(raw) && /username/i.test(raw)) return 'That username is already in use.'
   if (/duplicate key/i.test(raw) && /email/i.test(raw)) return 'That email address is already in use.'
   if (/duplicate key/i.test(raw) && /products_name/i.test(raw)) return 'A product with that name already exists.'

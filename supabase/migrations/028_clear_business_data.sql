@@ -1,5 +1,6 @@
 -- Admin can wipe operational business data. Paste in the Supabase SQL editor and Run.
 -- Keeps login accounts, categories, units, activity types, and settings.
+-- Every UPDATE/DELETE has a WHERE clause (required by pg-safeupdate / SQL editor).
 
 create or replace function public.clear_business_data()
 returns void
@@ -12,22 +13,32 @@ begin
     raise exception 'Only an administrator can clear business data.';
   end if;
 
-  update public.sales_transactions set source_bill_id = null, corrects_id = null;
-  update public.stock_in_transactions set corrects_id = null;
-  update public.activity_transactions set corrects_id = null;
-  update public.expenses set corrects_id = null;
+  perform set_config('manyara.internal', 'on', true);
 
-  delete from public.sales_items;
-  delete from public.stock_in_items;
-  delete from public.sales_transactions;
-  delete from public.stock_in_transactions;
-  delete from public.inventory_movements;
-  delete from public.expenses;
-  delete from public.activity_transactions;
-  delete from public.notifications;
-  delete from public.products;
-  delete from public.suppliers;
-  delete from public.audit_logs;
+  update public.sales_transactions
+    set source_bill_id = null, corrects_id = null
+    where id is not null;
+  update public.stock_in_transactions
+    set corrects_id = null
+    where id is not null;
+  update public.activity_transactions
+    set corrects_id = null
+    where id is not null;
+  update public.expenses
+    set corrects_id = null
+    where id is not null;
+
+  delete from public.sales_items where id is not null;
+  delete from public.stock_in_items where id is not null;
+  delete from public.sales_transactions where id is not null;
+  delete from public.stock_in_transactions where id is not null;
+  delete from public.inventory_movements where id is not null;
+  delete from public.expenses where id is not null;
+  delete from public.activity_transactions where id is not null;
+  delete from public.notifications where id is not null;
+  delete from public.products where id is not null;
+  delete from public.suppliers where id is not null;
+  delete from public.audit_logs where id is not null;
 
   if exists (select 1 from pg_class where relname = 'stock_in_code_seq' and relkind = 'S') then
     perform setval('public.stock_in_code_seq', 1, false);
@@ -55,3 +66,5 @@ $$;
 
 revoke all on function public.clear_business_data() from public;
 grant execute on function public.clear_business_data() to authenticated;
+
+notify pgrst, 'reload schema';

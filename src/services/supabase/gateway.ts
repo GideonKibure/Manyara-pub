@@ -673,35 +673,16 @@ export async function saveProductRemote(id: string | null, input: ProductDraft):
   const parsed = productSchema.safeParse(input)
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? 'Check the product.')
   if (id) {
-    const current = await client().from('products').select('name, size_mode, sizes, cup_price, half_price').eq('id', id).maybeSingle()
+    const current = await client().from('products').select('id').eq('id', id).maybeSingle()
     if (current.error) return fail(errorText(current.error))
     if (!current.data) return fail('Product not found.')
-    const row = current.data as Row
-    const sizeMode = str(row, 'size_mode')
-    const storedSizes = Array.isArray(row.sizes) ? row.sizes as Array<{ name?: string; cost?: number; price?: number; cupPrice?: number | null; halfPrice?: number | null }> : []
-    const sizes = sizeMode === 'many'
-      ? storedSizes.map((size) => {
-          const next = parsed.data.sizes.find((item) => item.name === size.name)
-          if (!next) return size
-          return {
-            ...size,
-            cost: next.cost,
-            price: next.price,
-            cupPrice: size.cupPrice == null ? null : next.cupPrice,
-            halfPrice: size.halfPrice == null ? null : next.halfPrice,
-          }
-        })
-      : storedSizes
-    const result = await client().from('products').update({
-      cost_price: parsed.data.costPrice,
-      selling_price: parsed.data.sellingPrice,
-      sizes,
-      cup_price: sizeMode === 'many' || row.cup_price == null ? row.cup_price ?? null : parsed.data.cupPrice,
-      half_price: sizeMode === 'many' || row.half_price == null ? row.half_price ?? null : parsed.data.halfPrice,
-    }).eq('id', id)
+    const result = await client()
+      .from('products')
+      .update(productPayload({ ...parsed.data, imageUrl: parsed.data.imageUrl ?? '', sku: parsed.data.sku ?? '' }))
+      .eq('id', id)
     if (result.error) return fail(errorText(result.error))
-    await audit('product.update', 'product', id, `Updated prices for ${str(row, 'name')}.`)
-    return { ok: true, message: 'Prices updated.' }
+    await audit('product.update', 'product', id, `Updated product ${parsed.data.name}.`)
+    return { ok: true, message: 'Product updated.' }
   }
   const payload = productPayload({ ...parsed.data, imageUrl: parsed.data.imageUrl ?? '', sku: parsed.data.sku ?? '' })
   const result = await client().from('products').insert(payload).select('id').single()

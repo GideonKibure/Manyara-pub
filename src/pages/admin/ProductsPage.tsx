@@ -213,24 +213,17 @@ function ProductDialog({ product, onClose }: { product: Product | null; onClose:
           }
           setOfferError('')
           const result = product
-            ? await app.editProduct(product.id, { ...values, ...compiled, sizeMode: product.sizeMode ?? compiled.sizeMode })
+            ? await app.editProduct(product.id, { ...values, ...compiled })
             : await app.addProduct({ ...values, ...compiled })
           if (result.ok) onClose()
         })}
       >
-        {product ? (
-          <div className="md:col-span-2">
-            <p className="text-lg font-semibold text-ink">{product.name}</p>
-            <p className="mt-1 text-sm text-stone-500">{t('productsPriceOnly')}</p>
-          </div>
-        ) : (
-          <>
         <Field label={t('productsName')} error={form.formState.errors.name?.message}>
           <TextInput {...form.register('name')} />
         </Field>
         <Field label={t('productsCategory')} error={form.formState.errors.categoryId?.message}>
           <SelectInput {...form.register('categoryId')}>
-            {app.categories.filter((category) => category.isActive).map((category) => (
+            {app.categories.filter((category) => category.isActive || category.id === product?.categoryId).map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
               </option>
@@ -294,24 +287,18 @@ function ProductDialog({ product, onClose }: { product: Product | null; onClose:
         <Field label={t('productsMinimum')} error={form.formState.errors.minStock?.message}>
           <Controller name="minStock" control={form.control} render={({ field }) => <NumberInput value={Number.isFinite(field.value) ? field.value : null} onValueChange={(next) => field.onChange(next ?? Number.NaN)} />} />
         </Field>
-          </>
-        )}
         {offer.sizeMode === 'one' && (
           <Field label={t('productsBuying')} error={form.formState.errors.costPrice?.message}>
             <Controller name="costPrice" control={form.control} render={({ field }) => <NumberInput value={Number.isFinite(field.value) ? field.value : null} onValueChange={(next) => field.onChange(next ?? Number.NaN)} />} />
           </Field>
         )}
         <div className="space-y-3 md:col-span-2">
-          {!product && (
-            <>
           <p className="text-sm font-medium text-ink">{t('productsSelling')}</p>
           <p className="text-sm text-stone-500">{t('productsSizeHint')}</p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant={offer.sizeMode === 'one' ? 'primary' : 'secondary'} onClick={() => setOffer((current) => ({ ...current, sizeMode: 'one' }))}>{t('productsOneSize')}</Button>
             <Button type="button" variant={offer.sizeMode === 'many' ? 'primary' : 'secondary'} onClick={() => setOffer((current) => ({ ...current, sizeMode: 'many' }))}>{t('productsManySizes')}</Button>
           </div>
-            </>
-          )}
           {offer.sizeMode === 'one' && (
             <Field label={t('productsSelling')} error={form.formState.errors.sellingPrice?.message}>
               <Controller name="sellingPrice" control={form.control} render={({ field }) => <NumberInput value={Number.isFinite(field.value) ? field.value : null} onValueChange={(next) => field.onChange(next ?? Number.NaN)} />} />
@@ -319,12 +306,11 @@ function ProductDialog({ product, onClose }: { product: Product | null; onClose:
           )}
           {offer.sizeMode === 'many' && (
             <div className="space-y-3">
-              {SIZE_ORDER.filter((name) => !product || offer.sizes[name].enabled).map((name) => (
+              {SIZE_ORDER.map((name) => (
                 <div key={name} className="rounded-xl border border-line p-3">
-                  {!product && <Checkbox label={t(name === 'small' ? 'productsSizeSmall' : name === 'medium' ? 'productsSizeMedium' : 'productsSizeBig')} checked={offer.sizes[name].enabled} onChange={(event) => patchSize(name, { enabled: event.target.checked })} />}
-                  {product && <p className="text-sm font-medium text-ink">{t(name === 'small' ? 'productsSizeSmall' : name === 'medium' ? 'productsSizeMedium' : 'productsSizeBig')}</p>}
+                  <Checkbox label={t(name === 'small' ? 'productsSizeSmall' : name === 'medium' ? 'productsSizeMedium' : 'productsSizeBig')} checked={offer.sizes[name].enabled} onChange={(event) => patchSize(name, { enabled: event.target.checked })} />
                   {offer.sizes[name].enabled && (
-                    <div className={`grid gap-3 sm:grid-cols-2 ${product ? '' : 'mt-3'}`}>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <Field label={t('productsBuying')}><NumberInput value={offer.sizes[name].cost} onValueChange={(next) => patchSize(name, { cost: next })} /></Field>
                       <Field label={t('productsSelling')}><NumberInput value={offer.sizes[name].price} onValueChange={(next) => patchSize(name, { price: next })} /></Field>
                       {offer.sellByCup && <Field label={t('productsCupPrice')}><NumberInput value={offer.sizes[name].cupPrice} onValueChange={(next) => patchSize(name, { cupPrice: next })} /></Field>}
@@ -335,12 +321,10 @@ function ProductDialog({ product, onClose }: { product: Product | null; onClose:
               ))}
             </div>
           )}
-          {!product && (
           <div className="flex flex-wrap gap-4">
             <Checkbox label={t('productsSellCup')} checked={offer.sellByCup} onChange={(event) => setOffer((current) => ({ ...current, sellByCup: event.target.checked }))} />
             <Checkbox label={t('productsSellHalf')} checked={offer.sellByHalf} onChange={(event) => setOffer((current) => ({ ...current, sellByHalf: event.target.checked }))} />
           </div>
-          )}
           {offer.sizeMode === 'one' && (offer.sellByCup || offer.sellByHalf) && (
             <div className="grid gap-3 sm:grid-cols-2">
               {offer.sellByCup && <Field label={t('productsCupPrice')}><NumberInput value={offer.cupPrice} onValueChange={(next) => setOffer((current) => ({ ...current, cupPrice: next }))} /></Field>}
@@ -349,11 +333,9 @@ function ProductDialog({ product, onClose }: { product: Product | null; onClose:
           )}
           {offerError && <p className="text-sm text-rose-700">{offerError}</p>}
         </div>
-        {!product && (
         <div className="md:col-span-2">
           <Checkbox label={t('productsActiveCheck')} {...form.register('isActive')} />
         </div>
-        )}
         <div className="flex justify-end gap-2 md:col-span-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             {t('productsCancel')}

@@ -311,32 +311,31 @@ export function updateProduct(db: Database, userId: string, productId: string, i
   if (sku && db.products.some((product) => product.id !== productId && product.sku.toLowerCase() === sku.toLowerCase())) {
     return fail('That SKU is already in use.')
   }
+  if (!db.categories.some((category) => category.id === parsed.data.categoryId)) return fail('Choose a valid category.')
   const products = db.products.map((product) =>
     product.id === productId
       ? {
           ...product,
+          name: parsed.data.name,
+          categoryId: parsed.data.categoryId,
+          imageUrl: parsed.data.imageUrl || undefined,
+          sku,
+          stockUnitId: parsed.data.stockUnitId,
+          receiveUnitId: parsed.data.receiveUnitId,
+          conversionFactor: parsed.data.conversionFactor,
           costPrice: parsed.data.costPrice,
           sellingPrice: parsed.data.sellingPrice,
-          sizes: product.sizeMode === 'many'
-            ? product.sizes.map((size) => {
-                const next = parsed.data.sizes.find((item) => item.name === size.name)
-                if (!next) return size
-                return {
-                  ...size,
-                  cost: next.cost,
-                  price: next.price,
-                  cupPrice: size.cupPrice == null ? null : next.cupPrice,
-                  halfPrice: size.halfPrice == null ? null : next.halfPrice,
-                }
-              })
-            : product.sizes,
-          cupPrice: product.sizeMode === 'one' && product.cupPrice != null ? parsed.data.cupPrice : product.cupPrice,
-          halfPrice: product.sizeMode === 'one' && product.halfPrice != null ? parsed.data.halfPrice : product.halfPrice,
+          sizeMode: parsed.data.sizeMode,
+          sizes: parsed.data.sizes,
+          cupPrice: parsed.data.cupPrice,
+          halfPrice: parsed.data.halfPrice,
+          minStock: parsed.data.minStock,
+          isActive: parsed.data.isActive,
           updatedAt: now(),
         }
       : product,
   )
-  return finish(audit({ ...db, products }, userId, 'product.update', 'product', productId, `Updated prices for ${current.name}.`), 'Prices updated.')
+  return finish(audit({ ...db, products }, userId, 'product.update', 'product', productId, `Updated product ${parsed.data.name}.`), 'Product updated.')
 }
 
 function productHasHistory(db: Database, productId: string) {

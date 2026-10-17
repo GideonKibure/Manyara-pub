@@ -38,7 +38,7 @@ import type {
   StockInDraft,
   StockInTransaction,
 } from '@/types'
-import { dateKey } from '@/utils/dates'
+import { dateKey, dateKeyDaysAgo } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { allocateInvoiceRef } from '@/utils/invoice'
 
@@ -1636,43 +1636,98 @@ export function deleteBusinessRecord(db: Database, userId: string, kind: RecordD
   return finish(audit({ ...db, expenses }, userId, 'expense.delete', 'expense', id, `Deleted expense ${record.code}.`), `${record.code} deleted.`)
 }
 
-export function saveDayClose(
-  db: Database,
-  userId: string,
-  input: { day: string; remainingSaleId?: string; debts: DayDebt[]; mobileReceived: number },
-): OpResult {
-  const actor = activeProfile(db, userId)
-  if (!actor.ok) return actor
-  if (actor.profile.role !== 'employee' && actor.profile.role !== 'admin') return fail('Sign in to save the COGS close.')
-  const day = input.day.slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return fail('Choose a valid day.')
-  const mobile = Math.max(0, Math.floor(input.mobileReceived || 0))
-  const debts = input.debts
+function cleanDebts(items: DayDebt[]) {
+  return items
     .map((item) => ({
       customerName: item.customerName.trim(),
       amount: Math.max(0, Math.floor(item.amount || 0)),
       products: item.products.trim(),
     }))
     .filter((item) => item.customerName.length >= 2 && item.amount >= 1)
+}
+
+export function saveDayClose(
+  db: Database,
+  userId: string,
+  input: { day: string; remainingSaleId?: string; debts: DayDebt[]; mobileReceived: number; expenseTotal?: number },
+): OpResult {
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
+  const day = input.day.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return fail('Choose a valid day.')
+  const today = dateKey()
+  const yesterday = dateKeyDaysAgo(1)
+  if (actor.profile.role !== 'admin' && day !== today && day !== yesterday) {
+    return fail('You can only record COGS for yesterday or today.')
+  }
   const existing = (db.dayCloses ?? []).find((item) => item.day === day && item.submittedBy === userId)
   const record: DayClose = {
     id: existing?.id ?? uid(),
     day,
     submittedBy: userId,
     remainingSaleId: input.remainingSaleId,
-    debts,
-    mobileReceived: mobile,
+    debts: cleanDebts(input.debts),
+    mobileReceived: Math.max(0, Math.floor(input.mobileReceived || 0)),
+    expenseTotal: Math.max(0, Math.floor(input.expenseTotal ?? 0)),
+    status: 'pending',
     createdAt: existing?.createdAt ?? now(),
   }
   const dayCloses = [...(db.dayCloses ?? []).filter((item) => item.id !== record.id), record]
   let next = audit({ ...db, dayCloses }, userId, 'day_close.save', 'day_close', record.id, `Saved COGS close for ${day}.`)
   next = notifyAdmins(next, {
-    type: 'submission_approved',
+    type: 'submission_pending',
     title: `COGS close · ${day}`,
     message: `${actor.profile.fullName} saved debts, Lipa Namba, cash, and profit for ${day}.`,
     href: '/admin/remaining',
   })
   return finish(next, 'COGS close saved.', { id: record.id })
+}
+
+export function updateDayClose(
+  db: Database,
+  userId: string,
+  id: string,
+  input: { debts: DayDebt[]; mobileReceived: number; expenseTotal: number },
+): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const current = (db.dayCloses ?? []).find((item) => item.id === id)
+  if (!current) return fail('COGS report not found.')
+  const dayCloses = (db.dayCloses ?? []).map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          debts: cleanDebts(input.debts),
+          mobileReceived: Math.max(0, Math.floor(input.mobileReceived || 0)),
+          expenseTotal: Math.max(0, Math.floor(input.expenseTotal || 0)),
+          status: 'pending' as const,
+          reviewedBy: undefined,
+          reviewedAt: undefined,
+        }
+      : item,
+  )
+  return finish(audit({ ...db, dayCloses }, userId, 'day_close.update', 'day_close', id, `Updated COGS report for ${current.day}.`), 'COGS report updated.')
+}
+
+export function deleteDayClose(db: Database, userId: string, id: string): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const current = (db.dayCloses ?? []).find((item) => item.id === id)
+  if (!current) return fail('COGS report not found.')
+  const dayCloses = (db.dayCloses ?? []).filter((item) => item.id !== id)
+  return finish(audit({ ...db, dayCloses }, userId, 'day_close.delete', 'day_close', id, `Deleted COGS report for ${current.day}.`), 'COGS report deleted.')
+}
+
+export function approveDayClose(db: Database, userId: string, id: string): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const current = (db.dayCloses ?? []).find((item) => item.id === id)
+  if (!current) return fail('COGS report not found.')
+  const stamped = now()
+  const dayCloses = (db.dayCloses ?? []).map((item) =>
+    item.id === id ? { ...item, status: 'approved' as const, reviewedBy: userId, reviewedAt: stamped } : item,
+  )
+  return finish(audit({ ...db, dayCloses }, userId, 'day_close.approve', 'day_close', id, `Approved COGS report for ${current.day}.`), 'COGS report approved.')
 }
 
 export function markNotificationRead(db: Database, userId: string, notificationId: string): OpResult {

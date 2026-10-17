@@ -32,6 +32,9 @@ import {
   adminDeleteEmployee,
   adminDeleteRecord,
   saveDayClose as saveDayCloseRpc,
+  adminUpdateDayClose,
+  adminDeleteDayClose,
+  adminApproveDayClose,
   staffDirectory,
   submitActivity,
   submitExpense,
@@ -508,6 +511,10 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
                 remainingSaleId: optional(row, 'remaining_sale_id'),
                 debts: mapDebts(row.debts),
                 mobileReceived: num(row, 'mobile_received'),
+                expenseTotal: num(row, 'expense_total'),
+                status: str(row, 'status') === 'approved' ? 'approved' : 'pending',
+                reviewedBy: optional(row, 'reviewed_by'),
+                reviewedAt: optional(row, 'reviewed_at'),
                 createdAt: str(row, 'created_at'),
               }),
             )
@@ -1029,13 +1036,33 @@ export async function saveDayCloseRemote(input: {
   remainingSaleId?: string
   debts: DayDebt[]
   mobileReceived: number
+  expenseTotal?: number
 }): Promise<ActionResult> {
   const result = await saveDayCloseRpc({
     day: input.day,
     remainingSaleId: input.remainingSaleId ?? null,
     debts: input.debts,
     mobileReceived: input.mobileReceived,
+    expenseTotal: input.expenseTotal ?? 0,
   })
   if (result.error) return fail(errorText(result.error))
   return { ok: true, message: 'COGS close saved.' }
+}
+
+export async function updateDayCloseRemote(id: string, input: { debts: DayDebt[]; mobileReceived: number; expenseTotal: number }): Promise<ActionResult> {
+  const result = await adminUpdateDayClose(id, input)
+  if (result.error) return fail(errorText(result.error))
+  return { ok: true, message: 'COGS report updated.' }
+}
+
+export async function deleteDayCloseRemote(id: string): Promise<ActionResult> {
+  const result = await adminDeleteDayClose(id)
+  if (result.error) return fail(errorText(result.error))
+  return { ok: true, message: 'COGS report deleted.' }
+}
+
+export async function approveDayCloseRemote(id: string): Promise<ActionResult> {
+  const result = await adminApproveDayClose(id)
+  if (result.error) return fail(errorText(result.error))
+  return { ok: true, message: 'COGS report approved.' }
 }

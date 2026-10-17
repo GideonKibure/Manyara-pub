@@ -25,6 +25,7 @@ import { NotificationsPage as EmployeeNotificationsPage } from '@/pages/employee
 import { OrdersPage } from '@/pages/employee/OrdersPage'
 import { ProfilePage } from '@/pages/employee/ProfilePage'
 import { SalesPage as EmployeeSalesPage } from '@/pages/employee/SalesPage'
+import { CogsPage } from '@/pages/admin/CogsPage'
 import { RemainingStockPage } from '@/pages/employee/RemainingStockPage'
 import { StockInPage as EmployeeStockInPage } from '@/pages/employee/StockInPage'
 import { SubmissionsPage } from '@/pages/employee/SubmissionsPage'
@@ -77,7 +78,7 @@ export function AppRouter() {
             <Route path="/admin/bills/edit" element={<EmployeeSalesPage kind="bill" />} />
             <Route path="/admin/approvals" element={<ApprovalsPage />} />
             <Route path="/admin/inventory" element={<InventoryPage />} />
-            <Route path="/admin/remaining" element={<RemainingStockPage />} />
+            <Route path="/admin/remaining" element={<CogsPage />} />
             <Route path="/admin/expenses" element={<AdminExpensesPage />} />
             <Route path="/admin/expenses/new" element={<EmployeeExpensesPage />} />
             <Route path="/admin/activities" element={<AdminActivitiesPage />} />

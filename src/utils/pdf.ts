@@ -42,6 +42,7 @@ export interface StyledReport {
   charts?: Array<{ title: string; bars: ReportBar[] }>
   tables?: Array<{ title: string; columns: ReportColumn[]; rows: string[][] }>
   notes?: string[]
+  stamp?: string
 }
 
 class Painter {
@@ -97,6 +98,10 @@ function paintHeader(doc: Painter, report: StyledReport) {
   doc.text(report.title, MARGIN, PAGE_H - 58, 18, '#fafaf9', true)
   if (report.subtitle) doc.text(report.subtitle, MARGIN, PAGE_H - 76, 10, '#d6d3d1')
   doc.text(report.dateLabel, PAGE_W - MARGIN, PAGE_H - 58, 10, '#fde68a', false, 'right')
+  if (report.stamp) {
+    doc.fillRect(PAGE_W - 148, PAGE_H - 86, 112, 18, '#b45309')
+    doc.text(report.stamp, PAGE_W - MARGIN, PAGE_H - 74, 8, '#fffbeb', true, 'right', 100)
+  }
   doc.y = PAGE_H - 118
 }
 

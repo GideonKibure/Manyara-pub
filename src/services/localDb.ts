@@ -1,7 +1,7 @@
 import { buildSeed } from '@/data/seed'
 import { ensureProduct } from '@/features/products/offer'
 import { approveInvoicedDeliveries, approveRecordedSales } from '@/services/operations'
-import type { Database, RecordKind, SalesItem, Session } from '@/types'
+import type { ApprovalStatus, Database, RecordKind, SalesItem, Session } from '@/types'
 
 export const DB_VERSION = 1
 export const DB_KEY = 'manyara.db.v2'
@@ -37,9 +37,14 @@ function normalizeStored(db: Database): Database {
     return { ...sale, recordKind, items }
   })
   const expenses = Array.isArray(db.expenses) ? db.expenses : []
-  const dayCloses = Array.isArray(db.dayCloses) ? db.dayCloses : []
+  const dayCloses = (Array.isArray(db.dayCloses) ? db.dayCloses : []).map((item) => ({
+    ...item,
+    expenseTotal: typeof item.expenseTotal === 'number' ? item.expenseTotal : 0,
+    status: (item.status === 'approved' || item.status === 'rejected' || item.status === 'cancelled' ? item.status : 'pending') as ApprovalStatus,
+  }))
   const counters = { ...db.counters, expense: typeof db.counters?.expense === 'number' ? db.counters.expense : 0 }
   if (!Array.isArray(db.expenses) || !Array.isArray(db.dayCloses) || counters.expense !== db.counters?.expense) changed = true
+  if (dayCloses.some((item, index) => item.expenseTotal !== db.dayCloses?.[index]?.expenseTotal || item.status !== db.dayCloses?.[index]?.status)) changed = true
   const settings = db.settings?.allowRemainingCount === true || db.settings?.allowRemainingCount === false
     ? db.settings
     : { ...db.settings, allowRemainingCount: false }

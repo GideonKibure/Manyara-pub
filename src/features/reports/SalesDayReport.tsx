@@ -241,6 +241,7 @@ export function CogsSheet({
   debts,
   mobile,
   staff,
+  approved = false,
 }: {
   rows: SalesDayRow[]
   day: string
@@ -248,6 +249,7 @@ export function CogsSheet({
   debts: Array<{ customerName: string; amount: number; products: string }>
   mobile: number
   staff?: string
+  approved?: boolean
 }) {
   const app = useApp()
   const { t } = useI18n()
@@ -269,6 +271,7 @@ export function CogsSheet({
       title: t('cogsSheetTitle'),
       subtitle: `${app.settings.businessName}${staff ? ` · ${staff}` : ''}`,
       dateLabel: formatDate(day),
+      stamp: approved ? t('statusApproved').toUpperCase() : t('statusPending').toUpperCase(),
       kpis: [
         { label: t('remainRevenue'), value: app.money(totals.sales) },
         { label: t('cogsCost'), value: app.money(totals.cogs) },
@@ -312,6 +315,9 @@ export function CogsSheet({
       <div className="bg-gradient-to-br from-stone-950 via-stone-900 to-amber-950 px-4 py-5 text-white sm:px-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-300">{t('cogsSheetTitle')}</p>
         <h2 className="mt-1 font-display text-2xl leading-tight">{formatDate(day)}</h2>
+        <span className={cn('mt-2 inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide', approved ? 'bg-emerald-400/20 text-emerald-200' : 'bg-amber-400/20 text-amber-200')}>
+          {approved ? t('statusApproved') : t('statusPending')}
+        </span>
         {staff && <p className="mt-1 text-sm text-stone-300">{staff}</p>}
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[

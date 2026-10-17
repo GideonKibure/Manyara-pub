@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ClipboardCheck, Package, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
-import { StaffCell, ProductThumb } from '@/components/ProductPicker'
+import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, TextArea, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel } from '@/components/ui/Feedback'
@@ -10,7 +10,7 @@ import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
 import type { DayDebt } from '@/types'
-import { asDateKey, dateKey, formatDate, formatDateTime } from '@/utils/dates'
+import { dateKey, dateKeyDaysAgo } from '@/utils/dates'
 import { cn } from '@/utils/cn'
 
 type Step = 'count' | 'expenses' | 'debts' | 'mobile' | 'sheet'
@@ -27,8 +27,10 @@ const stepLabel: Record<Step, MessageKey> = {
 export function RemainingStockPage() {
   const app = useApp()
   const { t } = useI18n()
-  const allowed = app.user?.role === 'admin' || app.settings.allowRemainingCount
-  const today = asDateKey(new Date().toISOString())
+  const allowed = app.settings.allowRemainingCount
+  const today = dateKey()
+  const yesterday = dateKeyDaysAgo(1)
+  const [cogsDay, setCogsDay] = useState(yesterday)
   const rows = useMemo(
     () =>
       app.products
@@ -53,12 +55,11 @@ export function RemainingStockPage() {
   const [debts, setDebts] = useState<DayDebt[]>([])
 
   const todayCounts = app.sales
-    .filter((sale) => sale.notes === 'Remaining stock count' && sale.status === 'approved' && asDateKey(sale.reviewedAt ?? sale.submittedAt) === today)
-    .sort((a, b) => (b.reviewedAt ?? '').localeCompare(a.reviewedAt ?? ''))
-  const myCount = todayCounts.find((sale) => sale.submittedBy === app.user?.id) ?? todayCounts[0]
-  const myClose = (app.dayCloses ?? []).find((item) => item.day === today && item.submittedBy === app.user?.id)
+    .filter((sale) => sale.notes === 'Remaining stock count' && sale.status === 'approved' && sale.submittedBy === app.user?.id)
+    .sort((a, b) => (b.reviewedAt ?? b.submittedAt).localeCompare(a.reviewedAt ?? a.submittedAt))
+  const myCount = todayCounts[0]
+  const myClose = (app.dayCloses ?? []).find((item) => item.day === cogsDay && item.submittedBy === app.user?.id)
   const [step, setStep] = useState<Step>(() => {
-    if (app.user?.role === 'admin') return 'count'
     if (myClose) return 'sheet'
     if (myCount) return 'expenses'
     return 'count'
@@ -81,7 +82,7 @@ export function RemainingStockPage() {
     ? reportFromCount({ products: app.products, sales: app.sales, movements: app.movements }, myCount)
     : filled.map((row) => ({ name: row.product.name, remaining: row.left, sold: row.sold, amount: row.revenue, profit: row.profit }))
   const todayExpenses = app.expenses
-    .filter((item) => item.submittedBy === app.user?.id && item.spentOn === today && item.status !== 'cancelled' && item.status !== 'rejected')
+    .filter((item) => item.submittedBy === app.user?.id && item.spentOn === cogsDay && item.status !== 'cancelled' && item.status !== 'rejected')
     .reduce((sum, item) => sum + item.amount, 0)
   const sheetDebts = myClose?.debts ?? debts
   const sheetMobile = myClose?.mobileReceived ?? mobile ?? 0
@@ -97,10 +98,23 @@ export function RemainingStockPage() {
     <div className="employee-dash remaining-close relative -mx-3 -mt-4 min-h-[calc(100dvh-4.5rem)] px-3 pb-40 pt-5 sm:-mx-4 sm:-mt-6 sm:px-4 sm:pt-6 md:-mx-8 md:-mb-8 md:px-8 md:pb-10">
       <div className="mx-auto max-w-5xl space-y-5">
         <PageHeader title={t('remainTitle')} description={t('remainBody')} />
-        <p className="rounded-full border border-white/80 bg-white/70 px-4 py-2 text-sm font-semibold text-ink shadow-sm backdrop-blur w-fit">{formatDate(today)}</p>
+        <label className="glass-panel flex w-fit items-center gap-3 rounded-full px-4 py-2 text-sm font-semibold text-ink">
+          <span>{t('cogsDay')}</span>
+          <input
+            type="date"
+            min={yesterday}
+            max={today}
+            value={cogsDay}
+            onChange={(event) => {
+              const next = event.target.value
+              if (next !== yesterday && next !== today) return
+              setCogsDay(next)
+            }}
+            className="bg-transparent font-semibold outline-none"
+          />
+        </label>
 
-        {app.user?.role !== 'admin' && (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             {steps.map((item) => (
               <button
                 key={item}
@@ -114,11 +128,10 @@ export function RemainingStockPage() {
               </button>
             ))}
           </div>
-        )}
 
         {!allowed && <div className="rounded-3xl border border-amber-200 bg-amber-50/90 p-5 text-sm leading-6 text-amber-950">{t('remainLocked')}</div>}
 
-        {(step === 'count' || app.user?.role === 'admin') && (
+        {step === 'count' && (
           <>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {summary.map((item) => (
@@ -141,7 +154,7 @@ export function RemainingStockPage() {
                   setBusy(false)
                   if (result.ok) {
                     setRemaining({})
-                    if (app.user?.role !== 'admin') setStep('expenses')
+                    setStep('expenses')
                   }
                 }}
               >
@@ -189,7 +202,7 @@ export function RemainingStockPage() {
           </>
         )}
 
-        {app.user?.role !== 'admin' && step === 'expenses' && (
+        {step === 'expenses' && (
           <Panel className="space-y-4">
             {!myCount && <p className="text-sm text-rose-700">{t('cogsNeedCount')}</p>}
             <Field label={t('expenseWhat')}><TextInput value={description} onChange={(event) => setDescription(event.target.value)} /></Field>
@@ -203,7 +216,7 @@ export function RemainingStockPage() {
                 onClick={async () => {
                   if (amount == null) return
                   setBusy(true)
-                  const result = await app.sendExpense({ description, amount, spentOn: dateKey(), notes })
+                    const result = await app.sendExpense({ description, amount, spentOn: cogsDay, notes })
                   setBusy(false)
                   if (result.ok) {
                     setDescription('')
@@ -219,7 +232,7 @@ export function RemainingStockPage() {
           </Panel>
         )}
 
-        {app.user?.role !== 'admin' && step === 'debts' && (
+        {step === 'debts' && (
           <Panel className="space-y-4">
             <h2 className="font-semibold">{t('cogsDebtsTitle')}</h2>
             <p className="text-sm text-stone-600">{t('cogsDebtsBody')}</p>
@@ -255,7 +268,7 @@ export function RemainingStockPage() {
           </Panel>
         )}
 
-        {app.user?.role !== 'admin' && step === 'mobile' && (
+        {step === 'mobile' && (
           <Panel className="space-y-4">
             <h2 className="font-semibold">{t('cogsMobileTitle')}</h2>
             <p className="text-sm text-stone-600">{t('cogsMobileBody')}</p>
@@ -268,10 +281,11 @@ export function RemainingStockPage() {
                 if (!myCount) return
                 setBusy(true)
                 const result = await app.saveDayClose({
-                  day: today,
+                  day: cogsDay,
                   remainingSaleId: myCount.id,
                   debts,
                   mobileReceived: mobile ?? 0,
+                  expenseTotal: todayExpenses,
                 })
                 setBusy(false)
                 if (result.ok) setStep('sheet')
@@ -282,49 +296,20 @@ export function RemainingStockPage() {
           </Panel>
         )}
 
-        {app.user?.role !== 'admin' && step === 'sheet' && (
+        {step === 'sheet' && (
           myCount ? (
             <CogsSheet
               rows={reportRows}
-              day={today}
-              expenses={todayExpenses}
+              day={cogsDay}
+              expenses={myClose?.expenseTotal ?? todayExpenses}
               debts={sheetDebts}
               mobile={sheetMobile}
               staff={`${app.user?.fullName ?? ''} @${app.user?.username ?? ''}`}
+              approved={myClose?.status === 'approved'}
             />
           ) : (
             <Panel><p className="text-sm text-rose-700">{t('cogsNeedCount')}</p></Panel>
           )
-        )}
-
-        {app.user?.role === 'admin' && (
-          <section className="glass-panel rounded-[1.75rem] p-4 sm:p-5">
-            <h2 className="font-semibold text-ink">{t('remainToday')}</h2>
-            <p className="mt-1 text-sm text-stone-500">{t('remainTodayBody')}</p>
-            <div className="mt-4 space-y-3">
-              {todayCounts.map((sale) => {
-                const close = (app.dayCloses ?? []).find((item) => item.remainingSaleId === sale.id || (item.day === today && item.submittedBy === sale.submittedBy))
-                const report = reportFromCount({ products: app.products, sales: app.sales, movements: app.movements }, sale)
-                const expenseTotal = app.expenses
-                  .filter((item) => item.submittedBy === sale.submittedBy && item.spentOn === today && item.status !== 'cancelled' && item.status !== 'rejected')
-                  .reduce((sum, item) => sum + item.amount, 0)
-                return (
-                  <div key={sale.id} className="space-y-3 rounded-2xl bg-stone-950 p-4 text-white">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <StaffCell id={sale.submittedBy} />
-                        <p className="mt-1 text-xs text-stone-400">{sale.code} · {formatDateTime(sale.reviewedAt ?? sale.submittedAt)}</p>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl bg-white p-2 text-ink">
-                      <CogsSheet rows={report} day={today} expenses={expenseTotal} debts={close?.debts ?? []} mobile={close?.mobileReceived ?? 0} />
-                    </div>
-                  </div>
-                )
-              })}
-              {!todayCounts.length && <p className="text-sm text-stone-500">{t('remainEmptyToday')}</p>}
-            </div>
-          </section>
         )}
       </div>
     </div>

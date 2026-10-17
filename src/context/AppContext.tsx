@@ -50,6 +50,9 @@ import {
   deleteEmployeeRemote,
   deleteRecordRemote,
   saveDayCloseRemote,
+  updateDayCloseRemote,
+  deleteDayCloseRemote,
+  approveDayCloseRemote,
   updatePasswordRemote,
   withdrawRemote,
 } from '@/services/supabase/gateway'
@@ -98,6 +101,9 @@ import {
   deleteEmployee,
   deleteBusinessRecord,
   saveDayClose,
+  updateDayClose,
+  deleteDayClose,
+  approveDayClose,
   updateOwnProfile,
   updateProduct,
   updateSettings,
@@ -189,7 +195,10 @@ interface AppContextValue {
   sendActivity: (draft: ActivityDraft) => Promise<ActionResult>
   sendExpense: (draft: ExpenseDraft) => Promise<ActionResult>
   deleteRecord: (kind: RecordDeleteKind, id: string) => Promise<ActionResult>
-  saveDayClose: (input: { day: string; remainingSaleId?: string; debts: DayDebt[]; mobileReceived: number }) => Promise<ActionResult>
+  saveDayClose: (input: { day: string; remainingSaleId?: string; debts: DayDebt[]; mobileReceived: number; expenseTotal?: number }) => Promise<ActionResult>
+  updateDayClose: (id: string, input: { debts: DayDebt[]; mobileReceived: number; expenseTotal: number }) => Promise<ActionResult>
+  deleteDayClose: (id: string) => Promise<ActionResult>
+  approveDayClose: (id: string) => Promise<ActionResult>
   acceptStockIn: (id: string) => Promise<ActionResult>
   declineStockIn: (id: string, reason: string) => Promise<ActionResult>
   acceptSale: (id: string) => Promise<ActionResult>
@@ -610,6 +619,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sendExpense: async (draft) => (remote ? runRemote(() => sendExpenseRemote(draft)) : run((database, userId) => submitExpense(database, userId, draft))),
     deleteRecord: async (kind, id) => (remote ? runRemote(() => deleteRecordRemote(kind, id)) : run((database, userId) => deleteBusinessRecord(database, userId, kind, id))),
     saveDayClose: async (input) => (remote ? runRemote(() => saveDayCloseRemote(input)) : run((database, userId) => saveDayClose(database, userId, input))),
+    updateDayClose: async (id, input) => (remote ? runRemote(() => updateDayCloseRemote(id, input)) : run((database, userId) => updateDayClose(database, userId, id, input))),
+    deleteDayClose: async (id) => (remote ? runRemote(() => deleteDayCloseRemote(id)) : run((database, userId) => deleteDayClose(database, userId, id))),
+    approveDayClose: async (id) => (remote ? runRemote(() => approveDayCloseRemote(id)) : run((database, userId) => approveDayClose(database, userId, id))),
     acceptStockIn: async (id) => (remote ? runRemote(() => acceptStockInRemote(id)) : run((database, userId) => approveStockIn(database, userId, id))),
     declineStockIn: async (id, reason) => (remote ? runRemote(() => declineStockInRemote(id, reason)) : run((database, userId) => rejectStockIn(database, userId, id, reason))),
     acceptSale: async (id) => (remote ? runRemote(() => acceptSaleRemote(id)) : run((database, userId) => approveSale(database, userId, id))),

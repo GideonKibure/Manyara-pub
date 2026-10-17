@@ -252,6 +252,10 @@ export interface DayClose {
   remainingSaleId?: string
   debts: DayDebt[]
   mobileReceived: number
+  expenseTotal: number
+  status: ApprovalStatus
+  reviewedBy?: string
+  reviewedAt?: string
   createdAt: string
 }
 

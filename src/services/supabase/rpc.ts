@@ -101,6 +101,21 @@ export async function saveDayClose(payload: Record<string, unknown>) {
   return client.rpc('save_day_close', { p_payload: payload })
 }
 
+export async function adminUpdateDayClose(id: string, payload: Record<string, unknown>) {
+  const client = await requireClient()
+  return client.rpc('admin_update_day_close', { p_id: id, p_payload: payload })
+}
+
+export async function adminDeleteDayClose(id: string) {
+  const client = await requireClient()
+  return client.rpc('admin_delete_day_close', { p_id: id })
+}
+
+export async function adminApproveDayClose(id: string) {
+  const client = await requireClient()
+  return client.rpc('admin_approve_day_close', { p_id: id })
+}
+
 export async function submitStockIn(payload: Record<string, unknown>) {
   const client = await requireClient()
   return client.rpc('submit_stock_in', { p_payload: payload })

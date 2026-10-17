@@ -404,6 +404,7 @@ export function buildSeed(): Database {
         submittedAt: isoDaysAgo(1, 18),
       },
     ] satisfies ExpenseTransaction[],
+    dayCloses: [],
     notifications: [],
     auditLogs: auditLogs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     settings: {

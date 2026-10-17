@@ -5,6 +5,8 @@ import { DataTable } from '@/components/ui/DataTable'
 import { SelectInput, TextInput } from '@/components/ui/Fields'
 import { PageHeader, StatusBadge } from '@/components/ui/Feedback'
 import { Modal } from '@/components/ui/Modal'
+import { StaffCell } from '@/components/ProductPicker'
+import { AdminDeleteButton } from '@/components/ui/AdminDelete'
 import { SaleDetail } from '@/features/transactions/Details'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
@@ -45,7 +47,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
           { key: 'code', header: 'Code', render: (row) => row.code },
           ...(kind === 'bill' ? [{ key: 'customer', header: 'Customer', render: (row: SalesTransaction) => row.customerName || '—' }] : []),
           { key: 'payment', header: 'Payment', render: (row) => (row.isLoss ? 'Loss' : row.paymentStatus === 'paid' ? 'Paid' : 'Unpaid') },
-          { key: 'employee', header: 'Employee', className: 'hidden md:table-cell', render: (row) => app.nameOf(row.submittedBy) },
+          { key: 'employee', header: 'Employee', className: 'hidden md:table-cell', render: (row) => <StaffCell id={row.submittedBy} /> },
           { key: 'when', header: 'Generated', sortValue: (row) => row.generatedAt, render: (row) => formatDateTime(row.generatedAt) },
           { key: 'total', header: 'Total', sortValue: (row) => (row.recordKind === 'bill' ? billBalance(row) : recordedTotal(row)), render: (row) => app.money(row.recordKind === 'bill' ? billBalance(row) : recordedTotal(row)) },
           { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
@@ -56,6 +58,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
               <span className="flex gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setSelected(row)}>View</Button>
                 {(row.status === 'pending' || row.status === 'approved') && <Button size="sm" variant="secondary" onClick={() => navigate(`${kind === 'bill' ? '/admin/bills/edit' : '/admin/sales/edit'}?edit=${row.id}`)}>Edit</Button>}
+                <AdminDeleteButton kind="sale" id={row.id} label={row.code} />
               </span>
             ),
           },

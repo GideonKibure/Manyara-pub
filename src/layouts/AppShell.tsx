@@ -172,7 +172,7 @@ export function AppShell({
         </div>
       )}
       <div className={cn('min-h-screen transition-[padding] duration-200', collapsed ? 'md:pl-20' : 'md:pl-72')}>
-        <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-line bg-paper/95 px-3 py-2 backdrop-blur md:justify-start sm:px-4">
+        <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-white/70 bg-white/55 px-3 py-2 backdrop-blur-xl md:justify-start sm:px-4">
           <button type="button" className="rounded-full ring-2 ring-amber-700/40 ring-offset-2 ring-offset-paper md:hidden" aria-label={t('openMenu')} aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}>
             <PersonPhoto src={user?.imageUrl} name={user?.fullName ?? 'M'} className="h-11 w-11 text-base" />
           </button>
@@ -193,7 +193,7 @@ export function AppShell({
               {unreadCount > 0 && <span className="absolute left-1/2 top-0 grid h-3.5 min-w-3.5 -translate-x-1/2 place-items-center rounded-full bg-rose-700 px-1 text-[9px] font-bold leading-none text-white">{unreadCount > 99 ? '99+' : unreadCount}</span>}
             </button>
             {bellOpen && (
-              <div className="absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-line bg-white p-3 shadow-xl">
+              <div className="glass-panel absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <p className="font-semibold">{t('notifications')}</p>
                   <button type="button" className="grid h-9 w-9 place-items-center rounded-lg hover:bg-stone-100" aria-label={t('closeNotifications')} onClick={() => setBellOpen(false)}>
@@ -242,7 +242,7 @@ export function AppShell({
       </div>
       {bottom && (
         <nav className="no-print fixed inset-x-2 z-30 md:hidden" style={{ bottom: 'max(0.4rem, env(safe-area-inset-bottom))' }} aria-label="Quick actions">
-          <div className="grid items-end rounded-[1.75rem] border border-amber-100/80 bg-white/95 px-1.5 py-2 shadow-[0_10px_28px_rgba(28,25,23,0.14)] backdrop-blur" style={{ gridTemplateColumns: `repeat(${bottom.length}, minmax(0, 1fr))` }}>
+          <div className="glass-panel grid items-end rounded-[1.75rem] px-1.5 py-2" style={{ gridTemplateColumns: `repeat(${bottom.length}, minmax(0, 1fr))` }}>
             {bottom.map((item) => {
               const active = item.menu ? mobileOpen : item.end ? location.pathname === item.to : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
               const body = (

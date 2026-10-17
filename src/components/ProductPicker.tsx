@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Product, StockSnapshot } from '@/types'
 import { StockBadge } from '@/components/ui/Feedback'
+import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import { cn } from '@/utils/cn'
 
@@ -20,13 +21,22 @@ export function productFromNotice(products: Array<{ id: string; name: string; im
   return [...products].sort((a, b) => b.name.length - a.name.length).find((product) => notice.title.includes(product.name) || notice.message.includes(product.name))
 }
 
-export function PersonName({ name, src, className }: { name: string; src?: string; className?: string }) {
+export function PersonName({ name, src, username, className }: { name: string; src?: string; username?: string; className?: string }) {
   return (
     <span className={cn('inline-flex min-w-0 items-center gap-2', className)}>
       <PersonPhoto src={src} name={name} className="h-8 w-8" />
-      <span className="min-w-0 truncate">{name}</span>
+      <span className="min-w-0">
+        <span className="block truncate">{name}</span>
+        {username ? <span className="block truncate text-xs font-normal text-stone-500">@{username}</span> : null}
+      </span>
     </span>
   )
+}
+
+export function StaffCell({ id }: { id?: string }) {
+  const { profiles, nameOf } = useApp()
+  const profile = profiles.find((item) => item.id === id)
+  return <PersonName name={profile?.fullName ?? nameOf(id)} src={profile?.imageUrl} username={profile?.username} />
 }
 
 export function PersonPhoto({ src, name, className }: { src?: string; name: string; className?: string }) {

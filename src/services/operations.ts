@@ -21,6 +21,8 @@ import type {
   AppNotification,
   AuditLog,
   Database,
+  DayClose,
+  DayDebt,
   EmployeeDraft,
   EmployeePatch,
   ExpenseDraft,
@@ -28,6 +30,7 @@ import type {
   InventoryMovement,
   ProductDraft,
   Profile,
+  RecordDeleteKind,
   SaleDraft,
   SaleSize,
   SalesItem,
@@ -385,6 +388,7 @@ export function clearBusinessData(db: Database, userId: string): OpResult {
     movements: [],
     activities: [],
     expenses: [],
+    dayCloses: [],
     notifications: [],
     auditLogs: [],
     availability: [],
@@ -1606,6 +1610,69 @@ export function updateActivityType(
   if (!current) return fail('Income type not found.')
   const activityTypes = db.activityTypes.map((item) => (item.id === activityTypeId ? { ...item, ...parsed.data, updatedAt: now() } : item))
   return finish(audit({ ...db, activityTypes }, userId, 'activity_type.update', 'activity_type', activityTypeId, `Updated pricing for ${current.name}.`), 'Pricing updated.')
+}
+
+export function deleteBusinessRecord(db: Database, userId: string, kind: RecordDeleteKind, id: string): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  if (kind === 'stock_in') {
+    const record = db.stockIns.find((item) => item.id === id)
+    if (!record) return fail('Delivery not found.')
+    const stockIns = db.stockIns.filter((item) => item.id !== id)
+    const movements = db.movements.filter((item) => item.referenceId !== record.id && item.referenceId !== record.code)
+    return finish(audit({ ...db, stockIns, movements }, userId, 'stock_in.delete', 'stock_in', id, `Deleted stock in ${record.code}.`), `${record.code} deleted. Stock from this delivery was reversed.`)
+  }
+  if (kind === 'sale') {
+    const record = db.sales.find((item) => item.id === id)
+    if (!record) return fail('Sale not found.')
+    const sales = db.sales.filter((item) => item.id !== id)
+    const movements = db.movements.filter((item) => item.referenceId !== record.id && item.referenceId !== record.code)
+    const label = record.recordKind === 'bill' ? 'bill' : 'sale'
+    return finish(audit({ ...db, sales, movements }, userId, `${label}.delete`, label, id, `Deleted ${label} ${record.code}.`), `${record.code} deleted. Related stock movements were reversed.`)
+  }
+  const record = db.expenses.find((item) => item.id === id)
+  if (!record) return fail('Expense not found.')
+  const expenses = db.expenses.filter((item) => item.id !== id)
+  return finish(audit({ ...db, expenses }, userId, 'expense.delete', 'expense', id, `Deleted expense ${record.code}.`), `${record.code} deleted.`)
+}
+
+export function saveDayClose(
+  db: Database,
+  userId: string,
+  input: { day: string; remainingSaleId?: string; debts: DayDebt[]; mobileReceived: number },
+): OpResult {
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
+  if (actor.profile.role !== 'employee' && actor.profile.role !== 'admin') return fail('Sign in to save the COGS close.')
+  const day = input.day.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return fail('Choose a valid day.')
+  const mobile = Math.max(0, Math.floor(input.mobileReceived || 0))
+  const debts = input.debts
+    .map((item) => ({
+      customerName: item.customerName.trim(),
+      amount: Math.max(0, Math.floor(item.amount || 0)),
+      products: item.products.trim(),
+    }))
+    .filter((item) => item.customerName.length >= 2 && item.amount >= 1)
+  const existing = (db.dayCloses ?? []).find((item) => item.day === day && item.submittedBy === userId)
+  const record: DayClose = {
+    id: existing?.id ?? uid(),
+    day,
+    submittedBy: userId,
+    remainingSaleId: input.remainingSaleId,
+    debts,
+    mobileReceived: mobile,
+    createdAt: existing?.createdAt ?? now(),
+  }
+  const dayCloses = [...(db.dayCloses ?? []).filter((item) => item.id !== record.id), record]
+  let next = audit({ ...db, dayCloses }, userId, 'day_close.save', 'day_close', record.id, `Saved COGS close for ${day}.`)
+  next = notifyAdmins(next, {
+    type: 'submission_approved',
+    title: `COGS close · ${day}`,
+    message: `${actor.profile.fullName} saved debts, Lipa Namba, cash, and profit for ${day}.`,
+    href: '/admin/remaining',
+  })
+  return finish(next, 'COGS close saved.', { id: record.id })
 }
 
 export function markNotificationRead(db: Database, userId: string, notificationId: string): OpResult {

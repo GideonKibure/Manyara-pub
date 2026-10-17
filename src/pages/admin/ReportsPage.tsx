@@ -47,6 +47,7 @@ export function ReportsPage() {
     auditLogs: [],
     settings: app.settings,
     expenses: app.expenses,
+    dayCloses: app.dayCloses,
     counters: { stockIn: 0, sale: 0, activity: 0, expense: 0, adjustment: 0 },
   }, { ...range, categoryId }), [app, range, categoryId])
 
@@ -68,6 +69,7 @@ export function ReportsPage() {
     auditLogs: [],
     settings: app.settings,
     expenses: app.expenses,
+    dayCloses: app.dayCloses,
     counters: { stockIn: 0, sale: 0, activity: 0, expense: 0, adjustment: 0 },
   }, statementDay), [app, statementDay])
 

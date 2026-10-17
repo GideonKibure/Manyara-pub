@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, TextArea, TextInput } from '@/components/ui/Fields'
-import { PageHeader, Panel } from '@/components/ui/Feedback'
+import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
 import { Modal } from '@/components/ui/Modal'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
-import { dateKey } from '@/utils/dates'
+import { dateKey, formatDate } from '@/utils/dates'
 
 export function ExpensesPage() {
   const app = useApp()
@@ -42,6 +42,26 @@ export function ExpensesPage() {
         </Field>
         <Button className="w-full" variant="gold" size="lg" disabled={!ready} onClick={() => setReview(true)}>{t('expenseReview')}</Button>
       </Panel>
+      {!admin && (
+        <Panel className="mt-6 max-w-xl">
+          <h2 className="font-semibold">{t('yourExpenses')}</h2>
+          <ul className="mt-3 divide-y divide-white/60">
+            {app.expenses.filter((item) => item.submittedBy === app.user?.id).map((item) => (
+              <li key={item.id} className="flex items-center justify-between gap-3 py-3">
+                <span>
+                  <span className="block font-medium">{item.description}</span>
+                  <span className="block text-sm text-stone-500">{item.code} · {formatDate(item.spentOn)}</span>
+                </span>
+                <span className="text-right">
+                  <span className="block font-semibold tabular-nums">{app.money(item.amount)}</span>
+                  <StatusBadge status={item.status} />
+                </span>
+              </li>
+            ))}
+            {!app.expenses.some((item) => item.submittedBy === app.user?.id) && <li className="py-3 text-sm text-stone-500">{t('yourExpensesEmpty')}</li>}
+          </ul>
+        </Panel>
+      )}
       <Modal open={review} title={t('expenseReview')} onClose={() => setReview(false)}>
         <p className="text-sm text-stone-600">{admin ? t('expenseAdminModal') : t('expenseModalBody')}</p>
         <p className="mt-3 font-semibold">{description.trim()}</p>

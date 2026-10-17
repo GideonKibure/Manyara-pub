@@ -26,7 +26,7 @@ function Reason({ status, reason }: { status: string; reason?: string }) {
 function Staff({ id }: { id?: string }) {
   const app = useApp()
   const profile = app.profiles.find((item) => item.id === id)
-  return <PersonName name={app.nameOf(id)} src={profile?.imageUrl} />
+  return <PersonName name={app.nameOf(id)} src={profile?.imageUrl} username={profile?.username} />
 }
 
 function Meta({ label, value }: { label: string; value: ReactNode }) {

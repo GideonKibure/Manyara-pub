@@ -42,9 +42,9 @@ export function PageHeader({ title, description, actions }: { title: string; des
 }
 
 export function StatCard({ label, value, hint, tone = 'default' }: { label: string; value: string; hint?: string; tone?: 'default' | 'warn' | 'danger' | 'good' }) {
-  const toneClass = { default: 'bg-white', warn: 'bg-amber-50', danger: 'bg-rose-50', good: 'bg-emerald-50' }[tone]
+  const toneClass = { default: '', warn: 'bg-amber-50/55', danger: 'bg-rose-50/55', good: 'bg-emerald-50/55' }[tone]
   return (
-    <article className={cn('min-w-0 rounded-2xl border border-line p-3 shadow-sm sm:p-4', toneClass)}>
+    <article className={cn('glass-panel reveal-card min-w-0 rounded-2xl p-3 sm:p-4', toneClass)}>
       <p className="text-sm leading-5 text-stone-600">{label}</p>
       <p className="mt-1 break-words text-xl font-semibold tabular-nums tracking-tight text-ink sm:mt-2 sm:text-2xl">{value}</p>
       {hint && <p className="mt-1 text-xs leading-5 text-stone-500">{hint}</p>}
@@ -54,7 +54,7 @@ export function StatCard({ label, value, hint, tone = 'default' }: { label: stri
 
 export function EmptyState({ title, body }: { title: string; body: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-stone-300 bg-white px-6 py-12 text-center">
+    <div className="glass-panel rounded-2xl border-dashed px-6 py-12 text-center">
       <p className="font-semibold text-ink">{title}</p>
       <p className="mt-1 text-sm text-stone-500">{body}</p>
     </div>
@@ -62,7 +62,7 @@ export function EmptyState({ title, body }: { title: string; body: string }) {
 }
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={cn('rounded-2xl border border-line bg-white p-4 shadow-sm md:p-5', className)}>{children}</section>
+  return <section className={cn('glass-panel reveal-card rounded-2xl p-4 md:p-5', className)}>{children}</section>
 }
 
 export function ToastViewport({

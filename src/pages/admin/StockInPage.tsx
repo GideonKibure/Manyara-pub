@@ -5,6 +5,8 @@ import { DataTable } from '@/components/ui/DataTable'
 import { Field, SelectInput, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
+import { ProductThumb, StaffCell } from '@/components/ProductPicker'
+import { AdminDeleteButton } from '@/components/ui/AdminDelete'
 import { StockInDetail } from '@/features/transactions/Details'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
@@ -79,7 +81,21 @@ export function StockInPage() {
         emptyTitle={t('emptyDeliveries')}
         columns={[
           { key: 'code', header: t('codeCol'), render: (row) => row.code },
+          {
+            key: 'photos',
+            header: t('navProducts'),
+            render: (row) => (
+              <span className="flex -space-x-2">
+                {row.items.slice(0, 4).map((item) => {
+                  const product = app.products.find((entry) => entry.id === item.productId)
+                  return <ProductThumb key={item.id} src={product?.imageUrl} name={product?.name ?? item.productId} className="h-9 w-9 ring-2 ring-white" />
+                })}
+                {row.items.length > 4 && <span className="grid h-9 w-9 place-items-center rounded-lg bg-stone-800 text-xs font-semibold text-white">+{row.items.length - 4}</span>}
+              </span>
+            ),
+          },
           { key: 'supplier', header: t('supplierCol'), render: (row) => row.supplierName },
+          { key: 'employee', header: t('navEmployees'), className: 'hidden md:table-cell', render: (row) => <StaffCell id={row.submittedBy} /> },
           { key: 'date', header: t('deliveryCol'), sortValue: (row) => row.deliveryDate, render: (row) => formatDate(row.deliveryDate) },
           { key: 'units', header: t('reportColUnits'), render: (row) => stockInUnits(row.items) },
           { key: 'cost', header: t('pdfCost'), className: 'hidden md:table-cell', render: (row) => app.money(stockInTotal(row.items)) },
@@ -91,6 +107,7 @@ export function StockInPage() {
               <span className="flex gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setSelected(row)}>{t('view')}</Button>
                 {(row.status === 'pending' || row.status === 'approved') && <Button size="sm" variant="secondary" onClick={() => navigate(`/admin/stock-in/edit?edit=${row.id}`)}>{t('edit')}</Button>}
+                <AdminDeleteButton kind="stock_in" id={row.id} label={row.code} />
               </span>
             ),
           },

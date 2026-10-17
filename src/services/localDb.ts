@@ -37,13 +37,14 @@ function normalizeStored(db: Database): Database {
     return { ...sale, recordKind, items }
   })
   const expenses = Array.isArray(db.expenses) ? db.expenses : []
+  const dayCloses = Array.isArray(db.dayCloses) ? db.dayCloses : []
   const counters = { ...db.counters, expense: typeof db.counters?.expense === 'number' ? db.counters.expense : 0 }
-  if (!Array.isArray(db.expenses) || counters.expense !== db.counters?.expense) changed = true
+  if (!Array.isArray(db.expenses) || !Array.isArray(db.dayCloses) || counters.expense !== db.counters?.expense) changed = true
   const settings = db.settings?.allowRemainingCount === true || db.settings?.allowRemainingCount === false
     ? db.settings
     : { ...db.settings, allowRemainingCount: false }
   if (settings !== db.settings) changed = true
-  return changed ? { ...db, products, sales, expenses, counters, settings } : db
+  return changed ? { ...db, products, sales, expenses, dayCloses, counters, settings } : db
 }
 
 const DROPPED_BILL = 'manyara.drop20k.v1'

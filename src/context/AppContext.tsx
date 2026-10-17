@@ -48,6 +48,8 @@ import {
   signOutRemote,
   updateEmployeeRemote,
   deleteEmployeeRemote,
+  deleteRecordRemote,
+  saveDayCloseRemote,
   updatePasswordRemote,
   withdrawRemote,
 } from '@/services/supabase/gateway'
@@ -94,6 +96,8 @@ import {
   updateCategory,
   updateEmployee,
   deleteEmployee,
+  deleteBusinessRecord,
+  saveDayClose,
   updateOwnProfile,
   updateProduct,
   updateSettings,
@@ -108,7 +112,9 @@ import type {
   Database,
   EmployeeDraft,
   EmployeePatch,
+  DayDebt,
   ProductDraft,
+  RecordDeleteKind,
   Profile,
   SaleDraft,
   Session,
@@ -137,6 +143,7 @@ interface AppContextValue {
   activityTypes: Database['activityTypes']
   activities: Database['activities']
   expenses: Database['expenses']
+  dayCloses: Database['dayCloses']
   notifications: AppNotification[]
   auditLogs: Database['auditLogs']
   snapshots: ReturnType<typeof allSnapshots>
@@ -181,6 +188,8 @@ interface AppContextValue {
   appendBillItem: (id: string, item: SaleDraft['items'][number]) => Promise<ActionResult>
   sendActivity: (draft: ActivityDraft) => Promise<ActionResult>
   sendExpense: (draft: ExpenseDraft) => Promise<ActionResult>
+  deleteRecord: (kind: RecordDeleteKind, id: string) => Promise<ActionResult>
+  saveDayClose: (input: { day: string; remainingSaleId?: string; debts: DayDebt[]; mobileReceived: number }) => Promise<ActionResult>
   acceptStockIn: (id: string) => Promise<ActionResult>
   declineStockIn: (id: string, reason: string) => Promise<ActionResult>
   acceptSale: (id: string) => Promise<ActionResult>
@@ -503,6 +512,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     activityTypes: db.activityTypes,
     activities: db.activities,
     expenses: db.expenses,
+    dayCloses: db.dayCloses ?? [],
     notifications,
     auditLogs: db.auditLogs,
     snapshots,
@@ -598,6 +608,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     appendBillItem: async (id, item) => (remote ? runRemote(() => appendBillItemRemote(id, item.productId, item.quantity, item.sizeName ?? 'one', item.portion ?? 'full')) : run((database, userId) => appendBillItem(database, userId, id, item))),
     sendActivity: async (draft) => (remote ? runRemote(() => sendActivityRemote(draft)) : run((database, userId) => submitActivity(database, userId, draft))),
     sendExpense: async (draft) => (remote ? runRemote(() => sendExpenseRemote(draft)) : run((database, userId) => submitExpense(database, userId, draft))),
+    deleteRecord: async (kind, id) => (remote ? runRemote(() => deleteRecordRemote(kind, id)) : run((database, userId) => deleteBusinessRecord(database, userId, kind, id))),
+    saveDayClose: async (input) => (remote ? runRemote(() => saveDayCloseRemote(input)) : run((database, userId) => saveDayClose(database, userId, input))),
     acceptStockIn: async (id) => (remote ? runRemote(() => acceptStockInRemote(id)) : run((database, userId) => approveStockIn(database, userId, id))),
     declineStockIn: async (id, reason) => (remote ? runRemote(() => declineStockInRemote(id, reason)) : run((database, userId) => rejectStockIn(database, userId, id, reason))),
     acceptSale: async (id) => (remote ? runRemote(() => acceptSaleRemote(id)) : run((database, userId) => approveSale(database, userId, id))),

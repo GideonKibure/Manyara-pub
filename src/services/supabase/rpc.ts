@@ -91,6 +91,16 @@ export async function adminDeleteEmployee(id: string) {
   return client.rpc('admin_delete_employee', { p_id: id })
 }
 
+export async function adminDeleteRecord(kind: string, id: string) {
+  const client = await requireClient()
+  return client.rpc('admin_delete_record', { p_kind: kind, p_id: id })
+}
+
+export async function saveDayClose(payload: Record<string, unknown>) {
+  const client = await requireClient()
+  return client.rpc('save_day_close', { p_payload: payload })
+}
+
 export async function submitStockIn(payload: Record<string, unknown>) {
   const client = await requireClient()
   return client.rpc('submit_stock_in', { p_payload: payload })

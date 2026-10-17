@@ -5,6 +5,8 @@ import { DataTable } from '@/components/ui/DataTable'
 import { SelectInput, TextInput } from '@/components/ui/Fields'
 import { PageHeader, StatusBadge } from '@/components/ui/Feedback'
 import { Modal } from '@/components/ui/Modal'
+import { StaffCell } from '@/components/ProductPicker'
+import { AdminDeleteButton } from '@/components/ui/AdminDelete'
 import { ExpenseDetail } from '@/features/transactions/Details'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
@@ -54,9 +56,14 @@ export function ExpensesPage() {
           { key: 'what', header: t('expenseWhat'), render: (row) => row.description },
           { key: 'amount', header: t('expenseAmount'), sortValue: (row) => row.amount, render: (row) => app.money(row.amount) },
           { key: 'when', header: t('expenseDate'), sortValue: (row) => row.spentOn, render: (row) => formatDate(row.spentOn) },
-          { key: 'employee', header: t('navEmployees'), className: 'hidden md:table-cell', render: (row) => app.nameOf(row.submittedBy) },
+          { key: 'employee', header: t('navEmployees'), className: 'hidden md:table-cell', render: (row) => <StaffCell id={row.submittedBy} /> },
           { key: 'status', header: t('labelStatus'), render: (row) => <StatusBadge status={row.status} /> },
-          { key: 'open', header: '', render: (row) => <Button size="sm" variant="secondary" onClick={() => setSelected(row)}>{t('view')}</Button> },
+          { key: 'open', header: '', render: (row) => (
+            <span className="flex gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setSelected(row)}>{t('view')}</Button>
+              <AdminDeleteButton kind="expense" id={row.id} label={row.code} />
+            </span>
+          ) },
         ]}
       />
       <Modal open={Boolean(selected)} title={selected?.code ?? t('pageExpenses')} onClose={() => setSelected(null)} wide>

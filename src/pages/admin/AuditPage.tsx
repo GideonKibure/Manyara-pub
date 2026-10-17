@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { DataTable } from '@/components/ui/DataTable'
 import { TextInput } from '@/components/ui/Fields'
+import { StaffCell } from '@/components/ProductPicker'
 import { PageHeader } from '@/components/ui/Feedback'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
@@ -25,7 +26,7 @@ export function AuditPage() {
         emptyTitle={t('emptyAudit')}
         columns={[
           { key: 'when', header: t('whenCol'), sortValue: (row) => row.createdAt, render: (row) => formatDateTime(row.createdAt) },
-          { key: 'who', header: t('whoCol'), render: (row) => nameOf(row.actorId) },
+          { key: 'who', header: t('whoCol'), render: (row) => <StaffCell id={row.actorId} /> },
           { key: 'action', header: t('actionCol'), className: 'hidden md:table-cell', render: (row) => row.action },
           { key: 'summary', header: t('summaryCol'), render: (row) => row.summary },
         ]}

@@ -66,7 +66,7 @@ export function DataTable<T>({
   const visibleColumns = columns.filter((column) => !column.className?.includes('hidden'))
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+    <div className="glass-panel reveal-card overflow-hidden rounded-2xl">
       <div className="divide-y divide-line md:hidden">
         {visible.map((row) => (
           <article key={getRowId(row)} className="space-y-2 px-3 py-3">

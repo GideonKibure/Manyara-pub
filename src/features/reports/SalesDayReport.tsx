@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/Button'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import { formatDate } from '@/utils/dates'
+import { cogsTotals } from '@/features/dayClose/cogs'
 import { downloadStyledPdf, type StyledReport } from '@/utils/pdf'
 import { cn } from '@/utils/cn'
 import type { Database, SalesTransaction } from '@/types'
@@ -228,6 +229,128 @@ export function SalesDayReport({
         <div className="sticky bottom-0 mt-4 flex flex-col gap-2 bg-gradient-to-t from-white via-white to-transparent pt-3 sm:flex-row">
           <Button variant="gold" className="w-full sm:flex-1" onClick={download}>{t('remainPdf')}</Button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+export function CogsSheet({
+  rows,
+  day,
+  expenses,
+  debts,
+  mobile,
+  staff,
+}: {
+  rows: SalesDayRow[]
+  day: string
+  expenses: number
+  debts: Array<{ customerName: string; amount: number; products: string }>
+  mobile: number
+  staff?: string
+}) {
+  const app = useApp()
+  const { t } = useI18n()
+  const totals = cogsTotals(rows, expenses, debts, mobile)
+  const lines = [
+    [t('remainRevenue'), app.money(totals.sales)],
+    [t('cogsCost'), app.money(totals.cogs)],
+    [t('cogsGross'), app.money(totals.gross)],
+    [t('navExpenses'), app.money(totals.expenses)],
+    [t('cogsStepDebts'), app.money(totals.debtTotal)],
+    [t('cogsCollections'), app.money(totals.collections)],
+    [t('cogsMobileTitle'), app.money(totals.mobile)],
+    [t('cogsCash'), app.money(totals.cash)],
+    [t('cogsNet'), app.money(totals.net)],
+  ] as const
+
+  const download = () => {
+    downloadStyledPdf(`cogs-${day}.pdf`, {
+      title: t('cogsSheetTitle'),
+      subtitle: `${app.settings.businessName}${staff ? ` · ${staff}` : ''}`,
+      dateLabel: formatDate(day),
+      kpis: [
+        { label: t('remainRevenue'), value: app.money(totals.sales) },
+        { label: t('cogsCost'), value: app.money(totals.cogs) },
+        { label: t('cogsCash'), value: app.money(totals.cash) },
+        { label: t('cogsNet'), value: app.money(totals.net) },
+      ],
+      tables: [
+        {
+          title: t('remainPdfSoldTitle'),
+          columns: [
+            { header: t('navProducts'), width: 0.4 },
+            { header: t('remainQty'), width: 0.15, align: 'right' },
+            { header: t('remainRevenue'), width: 0.22, align: 'right' },
+            { header: t('cogsCost'), width: 0.23, align: 'right' },
+          ],
+          rows: rows.filter((row) => row.sold > 0).map((row) => [row.name, String(row.sold), app.money(row.amount), app.money(row.amount - row.profit)]),
+        },
+        {
+          title: t('cogsStepDebts'),
+          columns: [
+            { header: t('cogsCustomer'), width: 0.4 },
+            { header: t('cogsDebtProducts'), width: 0.35 },
+            { header: t('cogsDebtAmount'), width: 0.25, align: 'right' },
+          ],
+          rows: debts.length ? debts.map((item) => [item.customerName, item.products || '—', app.money(item.amount)]) : [['—', t('cogsNoDebts'), app.money(0)]],
+        },
+        {
+          title: t('cogsSheetTitle'),
+          columns: [
+            { header: t('summaryCol'), width: 0.6 },
+            { header: t('cogsDebtAmount'), width: 0.4, align: 'right' },
+          ],
+          rows: lines.map(([label, value]) => [label, value]),
+        },
+      ],
+    })
+  }
+
+  return (
+    <div className="glass-panel reveal-card overflow-hidden rounded-[1.75rem]">
+      <div className="bg-gradient-to-br from-stone-950 via-stone-900 to-amber-950 px-4 py-5 text-white sm:px-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-300">{t('cogsSheetTitle')}</p>
+        <h2 className="mt-1 font-display text-2xl leading-tight">{formatDate(day)}</h2>
+        {staff && <p className="mt-1 text-sm text-stone-300">{staff}</p>}
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            [t('remainRevenue'), app.money(totals.sales)],
+            [t('cogsCost'), app.money(totals.cogs)],
+            [t('cogsCash'), app.money(totals.cash)],
+            [t('cogsNet'), app.money(totals.net)],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-2xl bg-white/10 px-3 py-2.5 ring-1 ring-white/10">
+              <p className="text-[10px] uppercase tracking-wide text-amber-200/80">{label}</p>
+              <p className="mt-1 break-words text-sm font-semibold tabular-nums sm:text-base">{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-3 p-4 sm:p-5">
+        {lines.map(([label, value]) => (
+          <div key={label} className="flex items-center justify-between gap-3 rounded-2xl bg-white/50 px-3 py-2.5 text-sm">
+            <span className="text-stone-600">{label}</span>
+            <span className="font-semibold tabular-nums text-ink">{value}</span>
+          </div>
+        ))}
+        {debts.length > 0 && (
+          <div className="rounded-2xl bg-white/50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">{t('cogsStepDebts')}</p>
+            <ul className="mt-2 space-y-2">
+              {debts.map((item, index) => (
+                <li key={`${item.customerName}-${index}`} className="flex justify-between gap-3 text-sm">
+                  <span>
+                    <span className="font-medium">{item.customerName}</span>
+                    {item.products ? <span className="mt-0.5 block text-xs text-stone-500">{item.products}</span> : null}
+                  </span>
+                  <span className="tabular-nums">{app.money(item.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <Button variant="gold" className="w-full" onClick={download}>{t('remainPdf')}</Button>
       </div>
     </div>
   )

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
-import { PersonName } from '@/components/ProductPicker'
+import { StaffCell } from '@/components/ProductPicker'
 import { pendingForAdmin } from '@/features/sales/holds'
 import { ActivityDetail, ExpenseDetail, SaleDetail, StockInDetail } from '@/features/transactions/Details'
 import { useApp } from '@/context/AppContext'
@@ -14,7 +14,7 @@ import { saleTotal } from '@/utils/labels'
 const tabs = ['Stock in', 'Sales', 'Activities', 'Expenses'] as const
 
 export function ApprovalsPage() {
-  const { stockIns, sales, activities, expenses, profiles, nameOf, money, activityTypes } = useApp()
+  const { stockIns, sales, activities, expenses, nameOf, money, activityTypes } = useApp()
   const { t } = useI18n()
   const [tab, setTab] = useState<(typeof tabs)[number]>('Stock in')
   const pendingStock = stockIns.filter((item) => item.status === 'pending')
@@ -102,7 +102,7 @@ export function ApprovalsPage() {
           { key: 'kind', header: 'Type', render: (row) => row.kind },
           { key: 'code', header: 'Code', render: (row) => row.code },
           { key: 'detail', header: 'Details', render: (row) => row.detail },
-          { key: 'employee', header: 'Employee', className: 'hidden md:table-cell', render: (row) => <PersonName name={row.employee} src={profiles.find((item) => item.id === row.employeeId)?.imageUrl} /> },
+          { key: 'employee', header: 'Employee', className: 'hidden md:table-cell', render: (row) => <StaffCell id={row.employeeId} /> },
           { key: 'reviewed', header: 'Reviewed', className: 'hidden lg:table-cell', render: (row) => row.reviewed },
           { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
         ]}

@@ -237,6 +237,24 @@ export interface BusinessSettings {
   updatedAt: string
 }
 
+export type RecordDeleteKind = 'stock_in' | 'sale' | 'expense'
+
+export interface DayDebt {
+  customerName: string
+  amount: number
+  products: string
+}
+
+export interface DayClose {
+  id: string
+  day: string
+  submittedBy: string
+  remainingSaleId?: string
+  debts: DayDebt[]
+  mobileReceived: number
+  createdAt: string
+}
+
 export interface ExpenseTransaction {
   id: string
   code: string
@@ -284,6 +302,7 @@ export interface Database {
   activityTypes: ActivityType[]
   activities: ActivityTransaction[]
   expenses: ExpenseTransaction[]
+  dayCloses: DayClose[]
   notifications: AppNotification[]
   auditLogs: AuditLog[]
   settings: BusinessSettings

@@ -6,7 +6,7 @@ import { DataTable } from '@/components/ui/DataTable'
 import { Checkbox, Field, NumberInput, SelectInput, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
 import { Modal } from '@/components/ui/Modal'
-import { PersonName } from '@/components/ProductPicker'
+import { StaffCell } from '@/components/ProductPicker'
 import { ActivityDetail } from '@/features/transactions/Details'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
@@ -42,10 +42,7 @@ export function ActivitiesPage() {
         getRowId={(row) => row.id}
         emptyTitle="No activity records"
         columns={[
-          { key: 'employee', header: 'Employee', render: (row) => {
-            const person = app.profiles.find((item) => item.id === row.submittedBy)
-            return <PersonName name={app.nameOf(row.submittedBy)} src={person?.imageUrl} />
-          } },
+          { key: 'employee', header: 'Employee', render: (row) => <StaffCell id={row.submittedBy} /> },
           { key: 'code', header: 'Code', render: (row) => row.code },
           { key: 'type', header: 'Type', render: (row) => app.activityTypes.find((item) => item.id === row.activityTypeId)?.name },
           { key: 'amount', header: 'Amount', sortValue: (row) => row.amount, render: (row) => app.money(row.amount) },

@@ -30,6 +30,8 @@ import {
   clearBusinessData as clearBusinessDataRpc,
   adminUpdateEmployee,
   adminDeleteEmployee,
+  adminDeleteRecord,
+  saveDayClose as saveDayCloseRpc,
   staffDirectory,
   submitActivity,
   submitExpense,
@@ -52,6 +54,8 @@ import type {
   AdjustmentDraft,
   AppNotification,
   Database,
+  DayClose,
+  DayDebt,
   EmployeeDraft,
   EmployeePatch,
   InventoryMovement,
@@ -59,6 +63,7 @@ import type {
   Product,
   ProductDraft,
   Profile,
+  RecordDeleteKind,
   SaleDraft,
   SalesTransaction,
   StockInDraft,
@@ -133,6 +138,18 @@ function rowsOf(data: unknown): Row[] {
   return Array.isArray(data) ? (data as Row[]) : []
 }
 
+function mapDebts(value: unknown): DayDebt[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as Row
+    const customerName = str(row, 'customerName') || str(row, 'customer_name')
+    const amount = num(row, 'amount')
+    if (customerName.length < 2 || amount < 1) return []
+    return [{ customerName, amount, products: str(row, 'products') }]
+  })
+}
+
 export function blankDatabase(): Database {
   return {
     version: 1,
@@ -149,6 +166,7 @@ export function blankDatabase(): Database {
     activityTypes: [],
     activities: [],
     expenses: [],
+    dayCloses: [],
     notifications: [],
     auditLogs: [],
     settings: {
@@ -246,6 +264,7 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
     auditLogs,
     settings,
     directory,
+    dayCloses,
   ] = await Promise.all([
     dbClient.from('profiles').select('*'),
     dbClient.from('categories').select('*'),
@@ -264,6 +283,7 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
     dbClient.from('audit_logs').select('*'),
     dbClient.from('business_settings').select('*').eq('id', 1).maybeSingle(),
     staffDirectory(),
+    dbClient.from('day_closes').select('*'),
   ])
 
   const firstError = [
@@ -284,6 +304,7 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
     auditLogs.error,
     settings.error,
     directory.error,
+    missingRelation(dayCloses.error) ? null : dayCloses.error,
   ].find(Boolean)
   if (firstError) return { ok: false, error: errorText(firstError) }
 
@@ -476,6 +497,21 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
               }),
             )
             .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
+      dayCloses: missingRelation(dayCloses.error)
+        ? []
+        : rowsOf(dayCloses.data)
+            .map(
+              (row): DayClose => ({
+                id: str(row, 'id'),
+                day: str(row, 'day').slice(0, 10),
+                submittedBy: str(row, 'submitted_by'),
+                remainingSaleId: optional(row, 'remaining_sale_id'),
+                debts: mapDebts(row.debts),
+                mobileReceived: num(row, 'mobile_received'),
+                createdAt: str(row, 'created_at'),
+              }),
+            )
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       notifications: rowsOf(notifications.data).map(
         (row): AppNotification => ({
           id: str(row, 'id'),
@@ -980,4 +1016,26 @@ export async function readAllNotificationsRemote(): Promise<ActionResult> {
   const { error } = await client().from('notifications').update({ read: true }).eq('recipient_id', user.data.user.id).eq('read', false)
   if (error) return fail(errorText(error))
   return { ok: true }
+}
+
+export async function deleteRecordRemote(kind: RecordDeleteKind, id: string): Promise<ActionResult> {
+  const result = await adminDeleteRecord(kind, id)
+  if (result.error) return fail(errorText(result.error))
+  return { ok: true, message: 'Record deleted.' }
+}
+
+export async function saveDayCloseRemote(input: {
+  day: string
+  remainingSaleId?: string
+  debts: DayDebt[]
+  mobileReceived: number
+}): Promise<ActionResult> {
+  const result = await saveDayCloseRpc({
+    day: input.day,
+    remainingSaleId: input.remainingSaleId ?? null,
+    debts: input.debts,
+    mobileReceived: input.mobileReceived,
+  })
+  if (result.error) return fail(errorText(result.error))
+  return { ok: true, message: 'COGS close saved.' }
 }

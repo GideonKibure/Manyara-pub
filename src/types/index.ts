@@ -245,12 +245,29 @@ export interface DayDebt {
   products: string
 }
 
+export interface CogsLine {
+  productId?: string
+  name: string
+  remaining: number
+  sold: number
+  amount: number
+  profit: number
+}
+
+export interface CogsExpenseLine {
+  description: string
+  amount: number
+  notes: string
+}
+
 export interface DayClose {
   id: string
   day: string
   submittedBy: string
   remainingSaleId?: string
   debts: DayDebt[]
+  lines: CogsLine[]
+  expenseItems: CogsExpenseLine[]
   mobileReceived: number
   expenseTotal: number
   status: ApprovalStatus

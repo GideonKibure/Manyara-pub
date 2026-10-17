@@ -39,6 +39,8 @@ function normalizeStored(db: Database): Database {
   const expenses = Array.isArray(db.expenses) ? db.expenses : []
   const dayCloses = (Array.isArray(db.dayCloses) ? db.dayCloses : []).map((item) => ({
     ...item,
+    lines: Array.isArray(item.lines) ? item.lines : [],
+    expenseItems: Array.isArray(item.expenseItems) ? item.expenseItems : [],
     expenseTotal: typeof item.expenseTotal === 'number' ? item.expenseTotal : 0,
     status: (item.status === 'approved' || item.status === 'rejected' || item.status === 'cancelled' ? item.status : 'pending') as ApprovalStatus,
   }))

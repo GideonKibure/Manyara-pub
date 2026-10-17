@@ -119,6 +119,8 @@ import type {
   EmployeeDraft,
   EmployeePatch,
   DayDebt,
+  CogsExpenseLine,
+  CogsLine,
   ProductDraft,
   RecordDeleteKind,
   Profile,
@@ -195,8 +197,23 @@ interface AppContextValue {
   sendActivity: (draft: ActivityDraft) => Promise<ActionResult>
   sendExpense: (draft: ExpenseDraft) => Promise<ActionResult>
   deleteRecord: (kind: RecordDeleteKind, id: string) => Promise<ActionResult>
-  saveDayClose: (input: { day: string; remainingSaleId?: string; debts: DayDebt[]; mobileReceived: number; expenseTotal?: number }) => Promise<ActionResult>
-  updateDayClose: (id: string, input: { debts: DayDebt[]; mobileReceived: number; expenseTotal: number }) => Promise<ActionResult>
+  saveDayClose: (input: {
+    day: string
+    remainingSaleId?: string
+    debts: DayDebt[]
+    mobileReceived: number
+    expenseTotal?: number
+    lines?: CogsLine[]
+    expenseItems?: CogsExpenseLine[]
+    submittedBy?: string
+  }) => Promise<ActionResult>
+  updateDayClose: (id: string, input: {
+    debts: DayDebt[]
+    mobileReceived: number
+    expenseTotal: number
+    lines?: CogsLine[]
+    expenseItems?: CogsExpenseLine[]
+  }) => Promise<ActionResult>
   deleteDayClose: (id: string) => Promise<ActionResult>
   approveDayClose: (id: string) => Promise<ActionResult>
   acceptStockIn: (id: string) => Promise<ActionResult>

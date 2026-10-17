@@ -1,15 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ClipboardCheck, Package, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
 import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, TextArea, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel } from '@/components/ui/Feedback'
+import { CogsEditor } from '@/features/dayClose/CogsEditor'
 import { snapshotFor } from '@/features/inventory/stock'
-import { CogsSheet, reportFromCount, type SalesDayRow } from '@/features/reports/SalesDayReport'
+import { CogsSheet, type SalesDayRow } from '@/features/reports/SalesDayReport'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
-import type { DayDebt } from '@/types'
+import type { CogsExpenseLine, CogsLine, DayDebt } from '@/types'
 import { dateKey, dateKeyDaysAgo } from '@/utils/dates'
 import { cn } from '@/utils/cn'
 
@@ -44,28 +45,39 @@ export function RemainingStockPage() {
     [app.products, app.sales, app.movements],
   )
   const [remaining, setRemaining] = useState<Record<string, number | null>>({})
+  const [skipped, setSkipped] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState<number | null>(null)
   const [notes, setNotes] = useState('')
-  const [customer, setCustomer] = useState('')
-  const [debtAmount, setDebtAmount] = useState<number | null>(null)
-  const [debtProducts, setDebtProducts] = useState('')
   const [mobile, setMobile] = useState<number | null>(0)
   const [debts, setDebts] = useState<DayDebt[]>([])
+  const [expenseItems, setExpenseItems] = useState<CogsExpenseLine[]>([])
+  const [lines, setLines] = useState<CogsLine[]>([])
 
   const todayCounts = app.sales
     .filter((sale) => sale.notes === 'Remaining stock count' && sale.status === 'approved' && sale.submittedBy === app.user?.id)
     .sort((a, b) => (b.reviewedAt ?? b.submittedAt).localeCompare(a.reviewedAt ?? a.submittedAt))
   const myCount = todayCounts[0]
   const myClose = (app.dayCloses ?? []).find((item) => item.day === cogsDay && item.submittedBy === app.user?.id)
-  const [step, setStep] = useState<Step>(() => {
-    if (myClose) return 'sheet'
-    if (myCount) return 'expenses'
-    return 'count'
-  })
+  const [step, setStep] = useState<Step>(() => (myClose ? 'sheet' : 'count'))
 
-  const filled = rows.map(({ product, opening }) => {
+  useEffect(() => {
+    if (!myClose) {
+      setDebts([])
+      setExpenseItems([])
+      setMobile(0)
+      setLines([])
+      return
+    }
+    setDebts(myClose.debts)
+    setExpenseItems(myClose.expenseItems ?? [])
+    setMobile(myClose.mobileReceived)
+    if (myClose.lines?.length) setLines(myClose.lines)
+  }, [cogsDay, myClose?.id])
+
+  const locked = myClose?.status === 'approved'
+  const filled = rows.filter((row) => !skipped.includes(row.product.id)).map(({ product, opening }) => {
     const value = remaining[product.id]
     const left = value == null ? opening : value
     const sold = Math.max(0, opening - left)
@@ -78,13 +90,16 @@ export function RemainingStockPage() {
   const profit = filled.reduce((sum, row) => sum + row.profit, 0)
   const revenue = filled.reduce((sum, row) => sum + row.revenue, 0)
   const blocked = filled.some((row) => row.over)
-  const reportRows: SalesDayRow[] = myCount
-    ? reportFromCount({ products: app.products, sales: app.sales, movements: app.movements }, myCount)
-    : filled.map((row) => ({ name: row.product.name, remaining: row.left, sold: row.sold, amount: row.revenue, profit: row.profit }))
-  const todayExpenses = app.expenses
-    .filter((item) => item.submittedBy === app.user?.id && item.spentOn === cogsDay && item.status !== 'cancelled' && item.status !== 'rejected')
-    .reduce((sum, item) => sum + item.amount, 0)
-  const sheetDebts = myClose?.debts ?? debts
+  const countedRows: SalesDayRow[] = filled.map((row) => ({
+    name: row.product.name,
+    remaining: row.left,
+    sold: row.sold,
+    amount: row.revenue,
+    profit: row.profit,
+  }))
+  const reportRows: SalesDayRow[] = (lines.length ? lines : countedRows).filter((row) => row.sold > 0 || row.remaining > 0)
+  const sheetExpenses = (myClose?.expenseItems?.length ? myClose.expenseItems : expenseItems).reduce((sum, item) => sum + item.amount, 0)
+  const sheetDebts = myClose?.debts?.length ? myClose.debts : debts
   const sheetMobile = myClose?.mobileReceived ?? mobile ?? 0
 
   const summary = [
@@ -120,9 +135,7 @@ export function RemainingStockPage() {
                 key={item}
                 type="button"
                 className={cn('rounded-2xl px-2 py-2 text-xs font-semibold uppercase tracking-wide transition', step === item ? 'bg-amber-700 text-white' : 'glass-panel text-stone-600')}
-                onClick={() => {
-                  if (item === 'count' || myCount) setStep(item)
-                }}
+                onClick={() => setStep(item)}
               >
                 {t(stepLabel[item])}
               </button>
@@ -143,19 +156,14 @@ export function RemainingStockPage() {
                 </div>
               ))}
             </div>
-            {allowed && (
+            {allowed && !locked && (
               <form
                 className="space-y-4"
-                onSubmit={async (event) => {
+                onSubmit={(event) => {
                   event.preventDefault()
                   if (blocked) return
-                  setBusy(true)
-                  const result = await app.sendRemainingCount(filled.map((row) => ({ productId: row.product.id, remaining: row.left })))
-                  setBusy(false)
-                  if (result.ok) {
-                    setRemaining({})
-                    setStep('expenses')
-                  }
+                  setLines(countedRows)
+                  setStep('expenses')
                 }}
               >
                 {!filled.length && <p className="rounded-3xl border border-dashed border-stone-300 bg-white/60 px-4 py-8 text-center text-sm text-stone-500">{t('remainNoneInStock')}</p>}
@@ -168,7 +176,10 @@ export function RemainingStockPage() {
                           <h2 className="truncate text-base font-semibold text-ink">{row.product.name}</h2>
                           <p className="text-xs text-stone-500">{t('remainOpening')} {row.opening}</p>
                         </div>
-                        <span className={cn('rounded-full px-3 py-1 text-xs font-semibold', row.profit < 0 ? 'bg-rose-100 text-rose-900' : 'bg-emerald-100 text-emerald-900')}>{app.money(row.profit)}</span>
+                        <span className="flex items-center gap-2">
+                          <span className={cn('rounded-full px-3 py-1 text-xs font-semibold', row.profit < 0 ? 'bg-rose-100 text-rose-900' : 'bg-emerald-100 text-emerald-900')}>{app.money(row.profit)}</span>
+                          <Button type="button" size="sm" variant="danger" onClick={() => setSkipped((current) => [...current, row.product.id])}>{t('deleteRecord')}</Button>
+                        </span>
                       </div>
                       <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
                         <label className="col-span-2 sm:col-span-1">
@@ -196,7 +207,7 @@ export function RemainingStockPage() {
                   ))}
                 </div>
                 {blocked && <p className="text-sm text-rose-700">{t('remainOver')}</p>}
-                <Button type="submit" variant="gold" className="w-full md:w-auto" loading={busy} disabled={blocked || !rows.length}>{t('remainSave')}</Button>
+                <Button type="submit" variant="gold" className="w-full md:w-auto" disabled={blocked || !filled.length}>{t('cogsNext')}</Button>
               </form>
             )}
           </>
@@ -204,31 +215,35 @@ export function RemainingStockPage() {
 
         {step === 'expenses' && (
           <Panel className="space-y-4">
-            {!myCount && <p className="text-sm text-rose-700">{t('cogsNeedCount')}</p>}
             <Field label={t('expenseWhat')}><TextInput value={description} onChange={(event) => setDescription(event.target.value)} /></Field>
             <Field label={t('expenseAmount')}><NumberInput value={amount} onValueChange={setAmount} /></Field>
             <Field label={t('expenseNotes')}><TextArea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="gold"
-                disabled={!description.trim() || amount == null || amount < 1 || !myCount}
-                loading={busy}
-                onClick={async () => {
+                disabled={!description.trim() || amount == null || amount < 1 || locked}
+                onClick={() => {
                   if (amount == null) return
-                  setBusy(true)
-                    const result = await app.sendExpense({ description, amount, spentOn: cogsDay, notes })
-                  setBusy(false)
-                  if (result.ok) {
-                    setDescription('')
-                    setAmount(null)
-                    setNotes('')
-                  }
+                  setExpenseItems((current) => [...current, { description: description.trim(), amount, notes }])
+                  setDescription('')
+                  setAmount(null)
+                  setNotes('')
                 }}
               >
-                {t('expenseSubmit')}
+                {t('cogsAddExpense')}
               </Button>
               <Button variant="secondary" onClick={() => setStep('debts')}>{t('cogsNext')}</Button>
             </div>
+            <ul className="space-y-2">
+              {expenseItems.map((item, index) => (
+                <li key={`${item.description}-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_8rem_auto]">
+                  <TextInput value={item.description} onChange={(event) => setExpenseItems((current) => current.map((row, i) => (i === index ? { ...row, description: event.target.value } : row)))} />
+                  <NumberInput value={item.amount} onValueChange={(value) => setExpenseItems((current) => current.map((row, i) => (i === index ? { ...row, amount: value ?? 0 } : row)))} />
+                  <Button size="sm" variant="danger" disabled={locked} onClick={() => setExpenseItems((current) => current.filter((_, i) => i !== index))}>{t('deleteRecord')}</Button>
+                </li>
+              ))}
+              {!expenseItems.length && <li className="text-sm text-stone-500">{t('yourExpensesEmpty')}</li>}
+            </ul>
           </Panel>
         )}
 
@@ -236,34 +251,15 @@ export function RemainingStockPage() {
           <Panel className="space-y-4">
             <h2 className="font-semibold">{t('cogsDebtsTitle')}</h2>
             <p className="text-sm text-stone-600">{t('cogsDebtsBody')}</p>
-            <Field label={t('cogsCustomer')}><TextInput value={customer} onChange={(event) => setCustomer(event.target.value)} /></Field>
-            <Field label={t('cogsDebtAmount')}><NumberInput value={debtAmount} onValueChange={setDebtAmount} /></Field>
-            <Field label={t('cogsDebtProducts')}><TextInput value={debtProducts} onChange={(event) => setDebtProducts(event.target.value)} /></Field>
-            <Button
-              variant="secondary"
-              disabled={customer.trim().length < 2 || debtAmount == null || debtAmount < 1}
-              onClick={() => {
-                if (debtAmount == null) return
-                setDebts((current) => [...current, { customerName: customer.trim(), amount: debtAmount, products: debtProducts.trim() }])
-                setCustomer('')
-                setDebtAmount(null)
-                setDebtProducts('')
-              }}
-            >
-              {t('cogsAddDebt')}
-            </Button>
-            <ul className="space-y-2">
-              {debts.map((item, index) => (
-                <li key={`${item.customerName}-${index}`} className="flex justify-between gap-3 rounded-2xl bg-white/50 px-3 py-2 text-sm">
-                  <span>
-                    <span className="font-medium">{item.customerName}</span>
-                    {item.products ? <span className="mt-0.5 block text-xs text-stone-500">{item.products}</span> : null}
-                  </span>
-                  <span className="tabular-nums">{app.money(item.amount)}</span>
-                </li>
-              ))}
-              {!debts.length && <li className="text-sm text-stone-500">{t('cogsNoDebts')}</li>}
-            </ul>
+            {debts.map((item, index) => (
+              <div key={`${item.customerName}-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_8rem_1fr_auto]">
+                <TextInput value={item.customerName} onChange={(event) => setDebts((current) => current.map((row, i) => (i === index ? { ...row, customerName: event.target.value } : row)))} />
+                <NumberInput value={item.amount} onValueChange={(value) => setDebts((current) => current.map((row, i) => (i === index ? { ...row, amount: value ?? 0 } : row)))} />
+                <TextInput value={item.products} onChange={(event) => setDebts((current) => current.map((row, i) => (i === index ? { ...row, products: event.target.value } : row)))} />
+                <Button size="sm" variant="danger" disabled={locked} onClick={() => setDebts((current) => current.filter((_, i) => i !== index))}>{t('deleteRecord')}</Button>
+              </div>
+            ))}
+            <Button variant="secondary" disabled={locked} onClick={() => setDebts((current) => [...current, { customerName: '', amount: 0, products: '' }])}>{t('cogsAddDebt')}</Button>
             <Button variant="gold" onClick={() => setStep('mobile')}>{t('cogsNext')}</Button>
           </Panel>
         )}
@@ -272,44 +268,88 @@ export function RemainingStockPage() {
           <Panel className="space-y-4">
             <h2 className="font-semibold">{t('cogsMobileTitle')}</h2>
             <p className="text-sm text-stone-600">{t('cogsMobileBody')}</p>
-            <Field label={t('cogsMobileAmount')}><NumberInput value={mobile} onValueChange={setMobile} /></Field>
-            <Button
-              variant="gold"
-              loading={busy}
-              disabled={!myCount}
-              onClick={async () => {
-                if (!myCount) return
-                setBusy(true)
-                const result = await app.saveDayClose({
-                  day: cogsDay,
-                  remainingSaleId: myCount.id,
-                  debts,
-                  mobileReceived: mobile ?? 0,
-                  expenseTotal: todayExpenses,
-                })
-                setBusy(false)
-                if (result.ok) setStep('sheet')
-              }}
-            >
-              {t('cogsSaveClose')}
-            </Button>
+            <Field label={t('cogsMobileAmount')}><NumberInput value={mobile} onValueChange={setMobile} disabled={locked} /></Field>
+            <Button variant="gold" onClick={() => setStep('sheet')}>{t('cogsNext')}</Button>
           </Panel>
         )}
 
         {step === 'sheet' && (
-          myCount ? (
+          <div className="space-y-3">
+            {!locked && (
+              <Panel>
+                <CogsEditor
+                  lines={reportRows}
+                  onLines={setLines}
+                  expenses={expenseItems}
+                  onExpenses={setExpenseItems}
+                  debts={debts}
+                  onDebts={setDebts}
+                  mobile={mobile}
+                  onMobile={setMobile}
+                />
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button
+                    variant="gold"
+                    loading={busy}
+                    onClick={async () => {
+                      setBusy(true)
+                      let saleId: string | undefined = myCount?.id
+                      if (!saleId && filled.some((row) => row.sold > 0)) {
+                        const counted = await app.sendRemainingCount(filled.map((row) => ({ productId: row.product.id, remaining: row.left })))
+                        if (!counted.ok) {
+                          setBusy(false)
+                          return
+                        }
+                        saleId = counted.meta?.id
+                      }
+                      const result = myClose
+                        ? await app.updateDayClose(myClose.id, {
+                            debts,
+                            mobileReceived: mobile ?? 0,
+                            expenseTotal: expenseItems.reduce((sum, item) => sum + item.amount, 0),
+                            lines: reportRows,
+                            expenseItems,
+                          })
+                        : await app.saveDayClose({
+                            day: cogsDay,
+                            remainingSaleId: saleId,
+                            debts,
+                            mobileReceived: mobile ?? 0,
+                            expenseTotal: expenseItems.reduce((sum, item) => sum + item.amount, 0),
+                            lines: reportRows,
+                            expenseItems,
+                          })
+                      setBusy(false)
+                      if (result.ok) setStep('sheet')
+                    }}
+                  >
+                    {t('cogsSubmitAdmin')}
+                  </Button>
+                  {myClose && (
+                    <Button variant="danger" loading={busy} onClick={async () => {
+                      setBusy(true)
+                      const result = await app.deleteDayClose(myClose.id)
+                      setBusy(false)
+                      if (result.ok) {
+                        setDebts([])
+                        setExpenseItems([])
+                        setMobile(0)
+                      }
+                    }}>{t('deleteRecord')}</Button>
+                  )}
+                </div>
+              </Panel>
+            )}
             <CogsSheet
               rows={reportRows}
               day={cogsDay}
-              expenses={myClose?.expenseTotal ?? todayExpenses}
+              expenses={sheetExpenses}
               debts={sheetDebts}
               mobile={sheetMobile}
               staff={`${app.user?.fullName ?? ''} @${app.user?.username ?? ''}`}
               approved={myClose?.status === 'approved'}
             />
-          ) : (
-            <Panel><p className="text-sm text-rose-700">{t('cogsNeedCount')}</p></Panel>
-          )
+          </div>
         )}
       </div>
     </div>

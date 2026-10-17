@@ -2,15 +2,16 @@ import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { StaffCell } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
-import { Field, NumberInput, TextInput } from '@/components/ui/Fields'
+import { Field, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
+import { CogsEditor } from '@/features/dayClose/CogsEditor'
 import { CogsSheet, reportFromCount } from '@/features/reports/SalesDayReport'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
-import type { DayClose, DayDebt } from '@/types'
+import type { CogsExpenseLine, CogsLine, DayClose, DayDebt } from '@/types'
 import { cn } from '@/utils/cn'
-import { asDateKey, formatDate } from '@/utils/dates'
+import { asDateKey, dateKey, formatDate } from '@/utils/dates'
 
 function monthParts(cursor: Date) {
   return { year: cursor.getFullYear(), month: cursor.getMonth() }
@@ -44,12 +45,12 @@ export function CogsPage() {
   const [editing, setEditing] = useState<DayClose | null>(null)
   const [debts, setDebts] = useState<DayDebt[]>([])
   const [mobile, setMobile] = useState<number | null>(0)
-  const [expenseTotal, setExpenseTotal] = useState<number | null>(0)
-  const [customer, setCustomer] = useState('')
-  const [debtAmount, setDebtAmount] = useState<number | null>(null)
-  const [debtProducts, setDebtProducts] = useState('')
   const [busy, setBusy] = useState(false)
   const [removing, setRemoving] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [addDay, setAddDay] = useState(dateKey())
+  const [lines, setLines] = useState<CogsLine[]>([])
+  const [expenseItems, setExpenseItems] = useState<CogsExpenseLine[]>([])
 
   const closesByDay = useMemo(() => {
     const map = new Map<string, DayClose[]>()
@@ -70,15 +71,26 @@ export function CogsPage() {
     setEditing(item)
     setDebts(item.debts)
     setMobile(item.mobileReceived)
-    setExpenseTotal(item.expenseTotal)
-    setCustomer('')
-    setDebtAmount(null)
-    setDebtProducts('')
+    setLines(item.lines ?? [])
+    setExpenseItems(item.expenseItems ?? [])
+  }
+
+  const openAdd = (day: string) => {
+    setAddDay(day)
+    setDebts([])
+    setMobile(0)
+    setLines([])
+    setExpenseItems([])
+    setAdding(true)
   }
 
   return (
     <div className="space-y-5">
-      <PageHeader title={t('cogsAdminTitle')} description={t('cogsAdminBody')} />
+      <PageHeader
+        title={t('cogsAdminTitle')}
+        description={t('cogsAdminBody')}
+        actions={<Button variant="gold" onClick={() => openAdd(dateKey())}>{t('cogsAddPast')}</Button>}
+      />
       <div className="flex items-center justify-between gap-3">
         <Button variant="secondary" size="sm" aria-label={t('tablePrev')} onClick={() => setCursor(new Date(year, month - 1, 1))}>
           <ChevronLeft className="h-4 w-4" />
@@ -103,8 +115,11 @@ export function CogsPage() {
             <button
               key={cell.key}
               type="button"
-              disabled={!ready}
-              onClick={() => setSelected(cell.key)}
+              onClick={() => {
+                if (cell.key > dateKey()) return
+                if (ready) setSelected(cell.key)
+                else openAdd(cell.key)
+              }}
               className={cn(
                 'reveal-card flex min-h-16 flex-col items-center justify-center rounded-2xl px-1 py-2 transition sm:min-h-24 sm:rounded-3xl',
                 ready
@@ -126,9 +141,11 @@ export function CogsPage() {
         <div className="space-y-4">
           {selectedCloses.map((item) => {
             const sale = app.sales.find((row) => row.id === item.remainingSaleId)
-            const rows = sale
-              ? reportFromCount({ products: app.products, sales: app.sales, movements: app.movements }, sale)
-              : []
+            const rows = item.lines?.length
+              ? item.lines
+              : sale
+                ? reportFromCount({ products: app.products, sales: app.sales, movements: app.movements }, sale)
+                : []
             const expenses = item.expenseTotal || app.expenses
               .filter((row) => row.submittedBy === item.submittedBy && asDateKey(row.spentOn) === item.day && row.status !== 'cancelled' && row.status !== 'rejected')
               .reduce((sum, row) => sum + row.amount, 0)
@@ -160,7 +177,12 @@ export function CogsPage() {
               </Panel>
             )
           })}
-          {!selectedCloses.length && <p className="text-sm text-stone-500">{t('cogsAdminEmptyDay')}</p>}
+          {!selectedCloses.length && (
+            <div className="space-y-3">
+              <p className="text-sm text-stone-500">{t('cogsAdminEmptyDay')}</p>
+              {selected && <Button variant="gold" onClick={() => openAdd(selected)}>{t('cogsAddPast')}</Button>}
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -168,42 +190,16 @@ export function CogsPage() {
         {editing && (
           <div className="space-y-4">
             <StaffCell id={editing.submittedBy} />
-            <Field label={t('cogsMobileAmount')}><NumberInput value={mobile} onValueChange={setMobile} /></Field>
-            <Field label={t('navExpenses')}><NumberInput value={expenseTotal} onValueChange={setExpenseTotal} /></Field>
-            <div className="space-y-2">
-              <p className="text-sm font-semibold">{t('cogsStepDebts')}</p>
-              {debts.map((item, index) => (
-                <div key={`${item.customerName}-${index}`} className="flex items-center justify-between gap-3 rounded-2xl bg-white/50 px-3 py-2 text-sm">
-                  <span>
-                    <span className="font-medium">{item.customerName}</span>
-                    {item.products ? <span className="block text-xs text-stone-500">{item.products}</span> : null}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="tabular-nums">{app.money(item.amount)}</span>
-                    <Button size="sm" variant="danger" onClick={() => setDebts((current) => current.filter((_, i) => i !== index))}>{t('deleteRecord')}</Button>
-                  </span>
-                </div>
-              ))}
-              {!debts.length && <p className="text-sm text-stone-500">{t('cogsNoDebts')}</p>}
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <Field label={t('cogsCustomer')}><TextInput value={customer} onChange={(event) => setCustomer(event.target.value)} /></Field>
-              <Field label={t('cogsDebtAmount')}><NumberInput value={debtAmount} onValueChange={setDebtAmount} /></Field>
-              <Field label={t('cogsDebtProducts')}><TextInput value={debtProducts} onChange={(event) => setDebtProducts(event.target.value)} /></Field>
-            </div>
-            <Button
-              variant="secondary"
-              disabled={customer.trim().length < 2 || debtAmount == null || debtAmount < 1}
-              onClick={() => {
-                if (debtAmount == null) return
-                setDebts((current) => [...current, { customerName: customer.trim(), amount: debtAmount, products: debtProducts.trim() }])
-                setCustomer('')
-                setDebtAmount(null)
-                setDebtProducts('')
-              }}
-            >
-              {t('cogsAddDebt')}
-            </Button>
+            <CogsEditor
+              lines={lines}
+              onLines={setLines}
+              expenses={expenseItems}
+              onExpenses={setExpenseItems}
+              debts={debts}
+              onDebts={setDebts}
+              mobile={mobile}
+              onMobile={setMobile}
+            />
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setEditing(null)}>{t('cancel')}</Button>
               <Button
@@ -211,7 +207,13 @@ export function CogsPage() {
                 loading={busy}
                 onClick={async () => {
                   setBusy(true)
-                  const result = await app.updateDayClose(editing.id, { debts, mobileReceived: mobile ?? 0, expenseTotal: expenseTotal ?? 0 })
+                  const result = await app.updateDayClose(editing.id, {
+                    debts,
+                    mobileReceived: mobile ?? 0,
+                    expenseTotal: expenseItems.reduce((sum, item) => sum + item.amount, 0),
+                    lines,
+                    expenseItems,
+                  })
                   setBusy(false)
                   if (result.ok) setEditing(null)
                 }}
@@ -221,6 +223,50 @@ export function CogsPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal open={adding} title={t('cogsAddPast')} onClose={() => setAdding(false)} wide>
+        <div className="space-y-4">
+          <Field label={t('cogsDay')}>
+            <TextInput type="date" max={dateKey()} value={addDay} onChange={(event) => setAddDay(event.target.value)} />
+          </Field>
+          <CogsEditor
+            lines={lines}
+            onLines={setLines}
+            expenses={expenseItems}
+            onExpenses={setExpenseItems}
+            debts={debts}
+            onDebts={setDebts}
+            mobile={mobile}
+            onMobile={setMobile}
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setAdding(false)}>{t('cancel')}</Button>
+            <Button
+              variant="gold"
+              loading={busy}
+              onClick={async () => {
+                setBusy(true)
+                const result = await app.saveDayClose({
+                  day: addDay,
+                  debts,
+                  mobileReceived: mobile ?? 0,
+                  expenseTotal: expenseItems.reduce((sum, item) => sum + item.amount, 0),
+                  lines,
+                  expenseItems,
+                  submittedBy: app.user?.id,
+                })
+                setBusy(false)
+                if (result.ok) {
+                  setAdding(false)
+                  setSelected(addDay)
+                }
+              }}
+            >
+              {t('save')}
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       <ConfirmDialog

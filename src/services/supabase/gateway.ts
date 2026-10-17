@@ -59,6 +59,8 @@ import type {
   Database,
   DayClose,
   DayDebt,
+  CogsExpenseLine,
+  CogsLine,
   EmployeeDraft,
   EmployeePatch,
   InventoryMovement,
@@ -150,6 +152,36 @@ function mapDebts(value: unknown): DayDebt[] {
     const amount = num(row, 'amount')
     if (customerName.length < 2 || amount < 1) return []
     return [{ customerName, amount, products: str(row, 'products') }]
+  })
+}
+
+function mapLines(value: unknown): CogsLine[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as Row
+    const name = str(row, 'name')
+    if (!name) return []
+    return [{
+      productId: optional(row, 'productId') ?? optional(row, 'product_id'),
+      name,
+      remaining: num(row, 'remaining'),
+      sold: num(row, 'sold'),
+      amount: num(row, 'amount'),
+      profit: num(row, 'profit'),
+    }]
+  })
+}
+
+function mapExpenseItems(value: unknown): CogsExpenseLine[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as Row
+    const description = str(row, 'description')
+    const amount = num(row, 'amount')
+    if (description.length < 2 || amount < 1) return []
+    return [{ description, amount, notes: str(row, 'notes') }]
   })
 }
 
@@ -510,6 +542,8 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
                 submittedBy: str(row, 'submitted_by'),
                 remainingSaleId: optional(row, 'remaining_sale_id'),
                 debts: mapDebts(row.debts),
+                lines: mapLines(row.lines),
+                expenseItems: mapExpenseItems(row.expense_items),
                 mobileReceived: num(row, 'mobile_received'),
                 expenseTotal: num(row, 'expense_total'),
                 status: str(row, 'status') === 'approved' ? 'approved' : 'pending',
@@ -1037,6 +1071,9 @@ export async function saveDayCloseRemote(input: {
   debts: DayDebt[]
   mobileReceived: number
   expenseTotal?: number
+  lines?: CogsLine[]
+  expenseItems?: CogsExpenseLine[]
+  submittedBy?: string
 }): Promise<ActionResult> {
   const result = await saveDayCloseRpc({
     day: input.day,
@@ -1044,12 +1081,21 @@ export async function saveDayCloseRemote(input: {
     debts: input.debts,
     mobileReceived: input.mobileReceived,
     expenseTotal: input.expenseTotal ?? 0,
+    lines: input.lines ?? [],
+    expenseItems: input.expenseItems ?? [],
+    submittedBy: input.submittedBy ?? null,
   })
   if (result.error) return fail(errorText(result.error))
   return { ok: true, message: 'COGS close saved.' }
 }
 
-export async function updateDayCloseRemote(id: string, input: { debts: DayDebt[]; mobileReceived: number; expenseTotal: number }): Promise<ActionResult> {
+export async function updateDayCloseRemote(id: string, input: {
+  debts: DayDebt[]
+  mobileReceived: number
+  expenseTotal: number
+  lines?: CogsLine[]
+  expenseItems?: CogsExpenseLine[]
+}): Promise<ActionResult> {
   const result = await adminUpdateDayClose(id, input)
   if (result.error) return fail(errorText(result.error))
   return { ok: true, message: 'COGS report updated.' }

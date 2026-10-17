@@ -23,6 +23,8 @@ import type {
   Database,
   DayClose,
   DayDebt,
+  CogsExpenseLine,
+  CogsLine,
   EmployeeDraft,
   EmployeePatch,
   ExpenseDraft,
@@ -883,7 +885,7 @@ export function submitRemainingCount(db: Database, userId: string, lines: Array<
     message: `${actor.profile.fullName} sent a remaining-stock report. ${transaction.code}: ${items.reduce((sum, item) => sum + item.quantity, 0)} sold, profit ${profit}. Open Remaining stock to review and download it.`,
     href: '/admin/remaining',
   })
-  return finish(next, `${transaction.code} recorded from remaining stock. Estimated profit ${profit}.`)
+  return finish(next, `${transaction.code} recorded from remaining stock. Estimated profit ${profit}.`, { id: transaction.id })
 }
 
 export function setBillPayment(db: Database, userId: string, transactionId: string, paymentStatus: SalesTransaction['paymentStatus']): OpResult {
@@ -1646,10 +1648,42 @@ function cleanDebts(items: DayDebt[]) {
     .filter((item) => item.customerName.length >= 2 && item.amount >= 1)
 }
 
+function cleanLines(items: CogsLine[] = []) {
+  return items
+    .map((item) => ({
+      productId: item.productId,
+      name: item.name.trim(),
+      remaining: Math.max(0, Math.floor(item.remaining || 0)),
+      sold: Math.max(0, Math.floor(item.sold || 0)),
+      amount: Math.max(0, Math.floor(item.amount || 0)),
+      profit: Math.floor(item.profit || 0),
+    }))
+    .filter((item) => item.name.length >= 1)
+}
+
+function cleanExpenseItems(items: CogsExpenseLine[] = []) {
+  return items
+    .map((item) => ({
+      description: item.description.trim(),
+      amount: Math.max(0, Math.floor(item.amount || 0)),
+      notes: item.notes.trim(),
+    }))
+    .filter((item) => item.description.length >= 2 && item.amount >= 1)
+}
+
 export function saveDayClose(
   db: Database,
   userId: string,
-  input: { day: string; remainingSaleId?: string; debts: DayDebt[]; mobileReceived: number; expenseTotal?: number },
+  input: {
+    day: string
+    remainingSaleId?: string
+    debts: DayDebt[]
+    mobileReceived: number
+    expenseTotal?: number
+    lines?: CogsLine[]
+    expenseItems?: CogsExpenseLine[]
+    submittedBy?: string
+  },
 ): OpResult {
   const actor = activeProfile(db, userId)
   if (!actor.ok) return actor
@@ -1657,18 +1691,25 @@ export function saveDayClose(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return fail('Choose a valid day.')
   const today = dateKey()
   const yesterday = dateKeyDaysAgo(1)
-  if (actor.profile.role !== 'admin' && day !== today && day !== yesterday) {
+  if (actor.profile.role === 'admin') {
+    if (day > today) return fail('COGS cannot be recorded for a future day.')
+  } else if (day !== today && day !== yesterday) {
     return fail('You can only record COGS for yesterday or today.')
   }
-  const existing = (db.dayCloses ?? []).find((item) => item.day === day && item.submittedBy === userId)
+  const owner = actor.profile.role === 'admin' && input.submittedBy ? input.submittedBy : userId
+  const existing = (db.dayCloses ?? []).find((item) => item.day === day && item.submittedBy === owner)
+  if (existing?.status === 'approved' && actor.profile.role !== 'admin') return fail('This COGS report is already approved.')
+  const expenseItems = cleanExpenseItems(input.expenseItems)
   const record: DayClose = {
     id: existing?.id ?? uid(),
     day,
-    submittedBy: userId,
+    submittedBy: owner,
     remainingSaleId: input.remainingSaleId,
     debts: cleanDebts(input.debts),
+    lines: cleanLines(input.lines),
+    expenseItems,
     mobileReceived: Math.max(0, Math.floor(input.mobileReceived || 0)),
-    expenseTotal: Math.max(0, Math.floor(input.expenseTotal ?? 0)),
+    expenseTotal: Math.max(0, Math.floor(input.expenseTotal ?? expenseItems.reduce((sum, item) => sum + item.amount, 0))),
     status: 'pending',
     createdAt: existing?.createdAt ?? now(),
   }
@@ -1677,7 +1718,7 @@ export function saveDayClose(
   next = notifyAdmins(next, {
     type: 'submission_pending',
     title: `COGS close · ${day}`,
-    message: `${actor.profile.fullName} saved debts, Lipa Namba, cash, and profit for ${day}.`,
+    message: `${actor.profile.fullName} saved a COGS report for ${day}.`,
     href: '/admin/remaining',
   })
   return finish(next, 'COGS close saved.', { id: record.id })
@@ -1687,22 +1728,29 @@ export function updateDayClose(
   db: Database,
   userId: string,
   id: string,
-  input: { debts: DayDebt[]; mobileReceived: number; expenseTotal: number },
+  input: { debts: DayDebt[]; mobileReceived: number; expenseTotal: number; lines?: CogsLine[]; expenseItems?: CogsExpenseLine[] },
 ): OpResult {
-  const adminCheck = requireAdmin(db, userId)
-  if (!adminCheck.ok) return adminCheck
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
   const current = (db.dayCloses ?? []).find((item) => item.id === id)
   if (!current) return fail('COGS report not found.')
+  const isAdmin = actor.profile.role === 'admin'
+  if (!isAdmin && (current.submittedBy !== userId || current.status === 'approved')) {
+    return fail('You can only edit your COGS report before it is approved.')
+  }
+  const expenseItems = cleanExpenseItems(input.expenseItems ?? current.expenseItems)
   const dayCloses = (db.dayCloses ?? []).map((item) =>
     item.id === id
       ? {
           ...item,
           debts: cleanDebts(input.debts),
+          lines: cleanLines(input.lines ?? item.lines),
+          expenseItems,
           mobileReceived: Math.max(0, Math.floor(input.mobileReceived || 0)),
-          expenseTotal: Math.max(0, Math.floor(input.expenseTotal || 0)),
-          status: 'pending' as const,
-          reviewedBy: undefined,
-          reviewedAt: undefined,
+          expenseTotal: Math.max(0, Math.floor(input.expenseTotal || expenseItems.reduce((sum, row) => sum + row.amount, 0))),
+          status: isAdmin ? ('pending' as const) : item.status,
+          reviewedBy: isAdmin ? undefined : item.reviewedBy,
+          reviewedAt: isAdmin ? undefined : item.reviewedAt,
         }
       : item,
   )
@@ -1710,10 +1758,13 @@ export function updateDayClose(
 }
 
 export function deleteDayClose(db: Database, userId: string, id: string): OpResult {
-  const adminCheck = requireAdmin(db, userId)
-  if (!adminCheck.ok) return adminCheck
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
   const current = (db.dayCloses ?? []).find((item) => item.id === id)
   if (!current) return fail('COGS report not found.')
+  if (actor.profile.role !== 'admin' && (current.submittedBy !== userId || current.status === 'approved')) {
+    return fail('You can only delete your COGS report before it is approved.')
+  }
   const dayCloses = (db.dayCloses ?? []).filter((item) => item.id !== id)
   return finish(audit({ ...db, dayCloses }, userId, 'day_close.delete', 'day_close', id, `Deleted COGS report for ${current.day}.`), 'COGS report deleted.')
 }

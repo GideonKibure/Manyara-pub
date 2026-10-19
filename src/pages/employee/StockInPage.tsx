@@ -5,11 +5,12 @@ import { ProductPicker } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, SelectInput, TextArea, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel } from '@/components/ui/Feedback'
+import { sizeCost } from '@/features/products/offer'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
 import type { SaleSize } from '@/types'
-import { dateKey } from '@/utils/dates'
+import { dateKey, dateKeyDaysAgo } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { nextInvoiceRef } from '@/utils/invoice'
 import { stockInTotal, stockInUnits } from '@/utils/labels'
@@ -43,7 +44,11 @@ export function StockInPage() {
   const [productId, setProductId] = useState(source?.items[0]?.productId ?? '')
   const [sizeName, setSizeName] = useState<SaleSize>(source?.items[0]?.sizeName ?? 'one')
   const [quantity, setQuantity] = useState<number | null>(null)
-  const [cost, setCost] = useState<number | null>(null)
+  const [cost, setCost] = useState<number | null>(() => {
+    const product = app.products.find((item) => item.id === (source?.items[0]?.productId ?? ''))
+    if (!product) return null
+    return sizeCost(product, source?.items[0]?.sizeName)
+  })
   const [lines, setLines] = useState<Line[]>(() => source?.items.map((item) => ({
     id: item.id || uid(),
     productId: item.productId,
@@ -77,6 +82,9 @@ export function StockInPage() {
   const suppliers = app.suppliers.filter((supplier) => supplier.isActive)
   const supplierReady = supplierName.trim().length >= 2
   const employeeSubmit = app.user?.role !== 'admin'
+  const today = dateKey()
+  const yesterday = dateKeyDaysAgo(1)
+  const defaultCost = selected ? sizeCost(selected, chosenSize?.name ?? sizeName) : null
   const preview = useMemo(() => lines.map((line) => {
     const product = app.products.find((item) => item.id === line.productId)
     const stockQuantity = line.receivedQuantity * (product?.conversionFactor ?? 1)
@@ -130,7 +138,7 @@ export function StockInPage() {
     })
     setEditingLineId(null)
     setQuantity(null)
-    setCost(null)
+    setCost(sizeCost(selected, nextSize))
   }
 
   function editLine(id: string) {
@@ -219,7 +227,7 @@ export function StockInPage() {
           {editingLineId && (
             <div className="flex items-start justify-between gap-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-950">
               <p>{t('stockUpdating')}</p>
-              <button type="button" className="shrink-0 font-semibold" onClick={() => { setEditingLineId(null); setQuantity(null); setCost(null) }}>{t('stockCancelEdit')}</button>
+              <button type="button" className="shrink-0 font-semibold" onClick={() => { setEditingLineId(null); setQuantity(null); setCost(defaultCost) }}>{t('stockCancelEdit')}</button>
             </div>
           )}
           <Field label={t('stockSupplier')} hint={t('stockSelectFirst')}>
@@ -246,7 +254,19 @@ export function StockInPage() {
               <TextInput value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder={t('stockSupplierPlaceholder')} />
             </Field>
           )}
-          <Field label={t('stockDate')}><TextInput type="date" max={dateKey()} value={deliveryDate} onChange={(event) => setDeliveryDate(event.target.value)} /></Field>
+          <Field label={t('stockDate')}>
+            <TextInput
+              type="date"
+              min={employeeSubmit ? yesterday : undefined}
+              max={today}
+              value={deliveryDate}
+              onChange={(event) => {
+                const next = event.target.value
+                if (employeeSubmit && next !== yesterday && next !== today && next !== source?.deliveryDate) return
+                setDeliveryDate(next)
+              }}
+            />
+          </Field>
           {!employeeSubmit && (
             <Field label={t('stockInvoice')} hint={t('stockInvoiceReady')}>
               <TextInput value={invoiceRef} readOnly className="bg-stone-100 font-medium" />
@@ -262,10 +282,11 @@ export function StockInPage() {
             canSeeStock
             onSelect={(next) => {
               const product = activeProducts.find((item) => item.id === next)
+              const nextSize: SaleSize = product?.sizeMode === 'many' ? product.sizes[0]?.name ?? 'one' : 'one'
               setProductId(next)
-              setSizeName(product?.sizeMode === 'many' ? product.sizes[0]?.name ?? 'one' : 'one')
+              setSizeName(nextSize)
               setSearch('')
-              setCost(null)
+              setCost(product ? sizeCost(product, nextSize) : null)
               setQuantity(null)
               setEditingLineId(null)
             }}
@@ -274,7 +295,10 @@ export function StockInPage() {
             <Field label={t('salesSize')}>
               <div className={`grid gap-2 ${sizeChoices.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
                 {sizeChoices.map((size) => (
-                  <Button key={size.name} type="button" className="w-full px-2" variant={chosenSize?.name === size.name ? 'gold' : 'secondary'} onClick={() => setSizeName(size.name)}>
+                  <Button key={size.name} type="button" className="w-full px-2" variant={chosenSize?.name === size.name ? 'gold' : 'secondary'} onClick={() => {
+                    setSizeName(size.name)
+                    if (!editingLineId) setCost(size.cost)
+                  }}>
                     {t(size.name === 'small' ? 'productsSizeSmall' : size.name === 'medium' ? 'productsSizeMedium' : 'productsSizeBig')}
                   </Button>
                 ))}
@@ -283,7 +307,13 @@ export function StockInPage() {
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label={`${t('stockQuantity')} (${receiveUnit?.name ?? 'unit'})`}><NumberInput value={quantity} onValueChange={setQuantity} /></Field>
-            <Field label={`${t('stockCost')} ${stockUnit?.abbreviation ?? 'unit'}`} hint={t('stockCostHint')}><NumberInput value={cost} onValueChange={setCost} /></Field>
+            <Field label={`${t('stockCost')} ${stockUnit?.abbreviation ?? 'unit'}`} hint={t('stockCostHint')}>
+              <NumberInput
+                value={cost}
+                onValueChange={setCost}
+                placeholder={defaultCost != null ? String(defaultCost) : undefined}
+              />
+            </Field>
           </div>
           {selected && (
             <div className="rounded-xl bg-stone-50 px-3 py-2 text-sm text-stone-600">

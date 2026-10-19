@@ -188,7 +188,8 @@ interface AppContextValue {
   removeEmployee: (id: string) => Promise<ActionResult>
   sendStockIn: (draft: StockInDraft) => Promise<ActionResult>
   sendSale: (draft: SaleDraft) => Promise<ActionResult>
-  sendRemainingCount: (lines: Array<{ productId: string; remaining: number }>) => Promise<ActionResult>
+  sendRemainingCount: (lines: Array<{ productId: string; remaining: number; unitCost?: number | null }>) => Promise<ActionResult>
+  approveAllPending: (kind: 'stock_in' | 'sale' | 'bill') => Promise<ActionResult>
   editStockIn: (id: string, draft: StockInDraft) => Promise<ActionResult>
   editSale: (id: string, draft: SaleDraft) => Promise<ActionResult>
   setBillPayment: (id: string, paymentStatus: 'paid' | 'unpaid') => Promise<ActionResult>
@@ -627,6 +628,60 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sendStockIn: async (draft) => (remote ? runRemote(() => sendStockInRemote(draft)) : run((database, userId) => submitStockIn(database, userId, draft))),
     sendSale: async (draft) => (remote ? runRemote(() => sendSaleRemote(draft)) : run((database, userId) => submitSale(database, userId, draft))),
     sendRemainingCount: async (lines) => (remote ? runRemote(() => sendRemainingCountRemote(lines)) : run((database, userId) => submitRemainingCount(database, userId, lines))),
+    approveAllPending: async (kind) => {
+      const userId = sessionRef.current?.userId
+      if (!userId) {
+        pushToast('error', 'You are not signed in.')
+        return { ok: false, error: 'You are not signed in.' }
+      }
+      const ids =
+        kind === 'stock_in'
+          ? dbRef.current.stockIns.filter((item) => item.status === 'pending').map((item) => item.id)
+          : dbRef.current.sales
+              .filter((item) => item.status === 'pending' && (kind === 'bill' ? item.recordKind === 'bill' : (item.recordKind ?? 'sale') === 'sale'))
+              .map((item) => item.id)
+      if (!ids.length) {
+        pushToast('success', 'Nothing is waiting for approval.')
+        return { ok: true, message: 'Nothing is waiting for approval.' }
+      }
+      let approved = 0
+      let error = ''
+      for (const id of ids) {
+        let result: ActionResult
+        if (remote) {
+          result = kind === 'stock_in' ? await acceptStockInRemote(id) : await acceptSaleRemote(id)
+        } else {
+          const op = kind === 'stock_in' ? approveStockIn(dbRef.current, userId, id) : approveSale(dbRef.current, userId, id)
+          if (!op.ok) result = { ok: false, error: op.error }
+          else {
+            dbRef.current = op.db
+            saveDatabase(op.db)
+            result = { ok: true, message: op.message }
+          }
+        }
+        if (result.ok) approved += 1
+        else {
+          error = result.error
+          break
+        }
+      }
+      if (remote) {
+        const loaded = await loadWorkspace()
+        if (loaded.ok) {
+          dbRef.current = loaded.db
+          setDb(loaded.db)
+        }
+      } else {
+        setDb(dbRef.current)
+      }
+      if (!approved && error) {
+        pushToast('error', error)
+        return { ok: false, error }
+      }
+      const message = `${approved} record${approved === 1 ? '' : 's'} approved.`
+      pushToast(error ? 'error' : 'success', error ? `${message} ${error}` : message)
+      return error ? { ok: false, error } : { ok: true, message }
+    },
     editStockIn: async (id, draft) => (remote ? runRemote(() => editStockInRemote(id, draft)) : run((database, userId) => editStockIn(database, userId, id, draft))),
     editSale: async (id, draft) => (remote ? runRemote(() => editSaleRemote(id, draft)) : run((database, userId) => editSale(database, userId, id, draft))),
     setBillPayment: async (id, paymentStatus) => (remote ? runRemote(() => setBillPaymentRemote(id, paymentStatus)) : run((database, userId) => setBillPayment(database, userId, id, paymentStatus))),

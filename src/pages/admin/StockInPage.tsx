@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ApproveAllButton } from '@/components/ui/ApproveAll'
 import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
 import { Field, SelectInput, TextInput } from '@/components/ui/Fields'
@@ -26,6 +27,8 @@ export function StockInPage() {
   const [supplierPhone, setSupplierPhone] = useState('')
   const [removing, setRemoving] = useState('')
   const [removingBusy, setRemovingBusy] = useState(false)
+  const [approving, setApproving] = useState(false)
+  const pendingCount = app.stockIns.filter((item) => item.status === 'pending').length
   const supplierToRemove = app.suppliers.find((supplier) => supplier.id === removing)
   const rows = useMemo(
     () =>
@@ -42,9 +45,9 @@ export function StockInPage() {
         title={t('pageStockReceived')}
         description={t('pageStockReceivedBody')}
         actions={
-          <span className="flex gap-2">
-            <Button variant="secondary" onClick={() => setSupplierOpen(true)}>{t('pageAddSupplier')}</Button>
-            <Button variant="gold" onClick={() => navigate('/admin/stock-in/new')}>Add stock</Button>
+          <span className="flex w-full flex-wrap gap-2 sm:w-auto">
+            <Button variant="secondary" className="flex-1 sm:flex-none" onClick={() => setSupplierOpen(true)}>{t('pageAddSupplier')}</Button>
+            <Button variant="gold" className="flex-1 sm:flex-none" onClick={() => navigate('/admin/stock-in/new')}>Add stock</Button>
           </span>
         }
       />
@@ -64,6 +67,16 @@ export function StockInPage() {
           {!app.suppliers.length && <li className="py-3 text-sm text-stone-500">{t('suppliersEmpty')}</li>}
         </ul>
       </Panel>
+      <ApproveAllButton
+        count={pendingCount}
+        loading={approving}
+        label={t('approveAllStockIn')}
+        onClick={async () => {
+          setApproving(true)
+          await app.approveAllPending('stock_in')
+          setApproving(false)
+        }}
+      />
       <div className="mb-4 grid gap-3 md:grid-cols-2">
         <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchDeliveries')} aria-label={t('searchDeliveries')} />
         <SelectInput value={status} onChange={(event) => setStatus(event.target.value)} aria-label={t('filterStatus')}>
@@ -104,7 +117,7 @@ export function StockInPage() {
             key: 'open',
             header: '',
             render: (row) => (
-              <span className="flex gap-2">
+              <span className="flex flex-wrap justify-end gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setSelected(row)}>{t('view')}</Button>
                 {(row.status === 'pending' || row.status === 'approved') && <Button size="sm" variant="secondary" onClick={() => navigate(`/admin/stock-in/edit?edit=${row.id}`)}>{t('edit')}</Button>}
                 <AdminDeleteButton kind="stock_in" id={row.id} label={row.code} />

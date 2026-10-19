@@ -818,7 +818,7 @@ export function submitSale(db: Database, userId: string, draft: SaleDraft): OpRe
   return finish(next, `${transaction.code} saved. Stock was updated. It stays in your bills until you mark it sold.`)
 }
 
-export function submitRemainingCount(db: Database, userId: string, lines: Array<{ productId: string; remaining: number }>): OpResult {
+export function submitRemainingCount(db: Database, userId: string, lines: Array<{ productId: string; remaining: number; unitCost?: number | null }>): OpResult {
   const actor = activeProfile(db, userId)
   if (!actor.ok) return actor
   if (actor.profile.role !== 'admin' && !db.settings.allowRemainingCount) {
@@ -829,19 +829,21 @@ export function submitRemainingCount(db: Database, userId: string, lines: Array<
   for (const line of lines) {
     const product = db.products.find((item) => item.id === line.productId && item.isActive)
     if (!product) return fail('Choose an active product.')
-    if (!Number.isInteger(line.remaining) || line.remaining < 0) return fail(`Enter the remaining quantity for ${product.name}.`)
+    const halfOk = Number.isFinite(line.remaining) && line.remaining >= 0 && Math.abs(line.remaining * 2 - Math.round(line.remaining * 2)) < 1e-6
+    if (!halfOk) return fail(`Enter the remaining quantity for ${product.name} as a whole number or a half (for example 10.5).`)
     const snap = snapshotFor(db, product.id)
     if (line.remaining > snap.available) {
       return fail(`${product.name} has ${snap.available} available. Remaining cannot be higher.`)
     }
     const sold = snap.available - line.remaining
-    if (sold < 1) continue
+    if (sold <= 0) continue
+    const unitCost = line.unitCost == null || !Number.isFinite(line.unitCost) || line.unitCost < 0 ? product.costPrice : Math.round(line.unitCost)
     items.push({
       id: uid(),
       productId: product.id,
       quantity: sold,
       unitPrice: product.sellingPrice,
-      unitCost: product.costPrice,
+      unitCost,
       sizeName: 'one',
       portion: 'full',
     })

@@ -36,10 +36,12 @@ export function NumberInput({
   className,
   onFocus,
   onBlur,
+  allowDecimal = false,
   ...props
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'> & {
   value: number | null
   onValueChange: (value: number | null) => void
+  allowDecimal?: boolean
 }) {
   const [text, setText] = useState(value == null || Number.isNaN(value) ? '' : String(value))
   const editing = useRef(false)
@@ -53,7 +55,7 @@ export function NumberInput({
     <input
       {...props}
       type="text"
-      inputMode="numeric"
+      inputMode={allowDecimal ? 'decimal' : 'numeric'}
       autoComplete="off"
       className={cn(fieldClass, className)}
       value={text}
@@ -63,15 +65,17 @@ export function NumberInput({
       }}
       onBlur={(event) => {
         editing.current = false
-        if (text.trim() === '') onValueChange(null)
+        if (text.trim() === '' || text.trim() === '.') onValueChange(null)
         else if (Number.isFinite(Number(text))) onValueChange(Number(text))
         onBlur?.(event)
       }}
       onChange={(event) => {
         const raw = event.target.value
-        if (raw !== '' && !/^\d+$/.test(raw)) return
+        const allowed = allowDecimal ? /^\d*\.?\d{0,1}$/ : /^\d+$/
+        if (raw !== '' && !allowed.test(raw)) return
         setText(raw)
-        onValueChange(raw === '' ? null : Number(raw))
+        if (raw === '' || raw === '.' || raw.endsWith('.')) return
+        onValueChange(Number(raw))
       }}
     />
   )

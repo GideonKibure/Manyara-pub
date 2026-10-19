@@ -72,8 +72,8 @@ export function DataTable<T>({
           <article key={getRowId(row)} className="space-y-2 px-3 py-3">
             {visibleColumns.map((column, index) => (
               <div key={column.key} className={index === 0 ? 'font-semibold text-ink' : 'flex items-start justify-between gap-3 text-sm'}>
-                {index > 0 && <span className="text-stone-500">{column.header}</span>}
-                <span className={index === 0 ? 'block' : 'text-right text-ink'}>{column.render(row)}</span>
+                {index > 0 && column.header ? <span className="shrink-0 text-stone-500">{column.header}</span> : null}
+                <span className={index === 0 ? 'block' : 'min-w-0 text-right text-ink'}>{column.render(row)}</span>
               </div>
             ))}
           </article>

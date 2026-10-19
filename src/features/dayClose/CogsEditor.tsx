@@ -30,9 +30,9 @@ export function CogsEditor({
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">{t('remainPdfSoldTitle')}</h3>
         {lines.map((line, index) => (
-          <div key={`${line.name}-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_5rem_7rem_7rem_auto]">
+          <div key={`${line.name}-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_5.5rem_7rem_7rem_auto]">
             <TextInput value={line.name} onChange={(event) => onLines(lines.map((item, i) => (i === index ? { ...item, name: event.target.value } : item)))} />
-            <NumberInput value={line.sold} onValueChange={(value) => onLines(lines.map((item, i) => (i === index ? { ...item, sold: value ?? 0 } : item)))} />
+            <NumberInput allowDecimal value={line.sold} onValueChange={(value) => onLines(lines.map((item, i) => (i === index ? { ...item, sold: value ?? 0 } : item)))} />
             <NumberInput value={line.amount} onValueChange={(value) => onLines(lines.map((item, i) => (i === index ? { ...item, amount: value ?? 0 } : item)))} />
             <NumberInput value={line.profit} onValueChange={(value) => onLines(lines.map((item, i) => (i === index ? { ...item, profit: value ?? 0 } : item)))} />
             <Button size="sm" variant="danger" onClick={() => onLines(lines.filter((_, i) => i !== index))}>{t('deleteRecord')}</Button>

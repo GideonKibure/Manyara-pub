@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { ApproveAllButton } from '@/components/ui/ApproveAll'
 import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
@@ -11,17 +12,20 @@ import type { ApprovalStatus } from '@/types'
 import { formatDateTime } from '@/utils/dates'
 import { saleTotal } from '@/utils/labels'
 
-const tabs = ['Stock in', 'Sales', 'Activities', 'Expenses'] as const
+const tabs = ['Stock in', 'Sales', 'Credits', 'Activities', 'Expenses'] as const
 
 export function ApprovalsPage() {
-  const { stockIns, sales, activities, expenses, nameOf, money, activityTypes } = useApp()
+  const app = useApp()
+  const { stockIns, sales, activities, expenses, nameOf, money, activityTypes } = app
   const { t } = useI18n()
   const [tab, setTab] = useState<(typeof tabs)[number]>('Stock in')
+  const [approving, setApproving] = useState(false)
   const pendingStock = stockIns.filter((item) => item.status === 'pending')
   const pendingSales = sales.filter((item) => pendingForAdmin(item))
+  const pendingCredits = sales.filter((item) => item.status === 'pending' && item.recordKind === 'bill')
   const pendingActivities = activities.filter((item) => item.status === 'pending')
   const pendingExpenses = expenses.filter((item) => item.status === 'pending')
-  const counts = [pendingStock.length, pendingSales.length, pendingActivities.length, pendingExpenses.length]
+  const counts = [pendingStock.length, pendingSales.length, pendingCredits.length, pendingActivities.length, pendingExpenses.length]
   const history = useMemo(() => {
     const rows: Array<{ id: string; at: string; kind: string; code: string; detail: string; employeeId: string; employee: string; reviewed: string; status: ApprovalStatus }> = [
       ...stockIns.filter((item) => item.status !== 'pending').map((item) => ({
@@ -77,18 +81,55 @@ export function ApprovalsPage() {
       <PageHeader title={t('pageApprovals')} description={t('pageApprovalsBody')} />
       <div className="mb-4 flex flex-wrap gap-2">
         {tabs.map((item, index) => (
-          <Button key={item} variant={tab === item ? 'primary' : 'secondary'} onClick={() => setTab(item)}>
-            {{ 'Stock in': t('navStockIn'), Sales: t('navSales'), Activities: t('navActivities'), Expenses: t('navExpenses') }[item]} ({counts[index]})
+          <Button key={item} variant={tab === item ? 'primary' : 'secondary'} className="min-h-11 flex-1 sm:flex-none" onClick={() => setTab(item)}>
+            {{ 'Stock in': t('navStockIn'), Sales: t('navSales'), Credits: t('tabCredits'), Activities: t('navActivities'), Expenses: t('navExpenses') }[item]} ({counts[index]})
           </Button>
         ))}
       </div>
+      {tab === 'Stock in' && (
+        <ApproveAllButton
+          count={pendingStock.length}
+          loading={approving}
+          label={t('approveAllStockIn')}
+          onClick={async () => {
+            setApproving(true)
+            await app.approveAllPending('stock_in')
+            setApproving(false)
+          }}
+        />
+      )}
+      {tab === 'Sales' && (
+        <ApproveAllButton
+          count={pendingSales.length}
+          loading={approving}
+          label={t('approveAllSales')}
+          onClick={async () => {
+            setApproving(true)
+            await app.approveAllPending('sale')
+            setApproving(false)
+          }}
+        />
+      )}
+      {tab === 'Credits' && (
+        <ApproveAllButton
+          count={pendingCredits.length}
+          loading={approving}
+          label={t('approveAllCredits')}
+          onClick={async () => {
+            setApproving(true)
+            await app.approveAllPending('bill')
+            setApproving(false)
+          }}
+        />
+      )}
       <div className="grid gap-4 lg:grid-cols-2">
         {tab === 'Stock in' && pendingStock.map((record) => <Panel key={record.id}><StockInDetail record={record} mode="review" /></Panel>)}
         {tab === 'Sales' && pendingSales.map((record) => <Panel key={record.id}><SaleDetail record={record} mode="review" /></Panel>)}
+        {tab === 'Credits' && pendingCredits.map((record) => <Panel key={record.id}><SaleDetail record={record} mode="review" /></Panel>)}
         {tab === 'Activities' && pendingActivities.map((record) => <Panel key={record.id}><ActivityDetail record={record} mode="review" /></Panel>)}
         {tab === 'Expenses' && pendingExpenses.map((record) => <Panel key={record.id}><ExpenseDetail record={record} mode="review" /></Panel>)}
       </div>
-      {((tab === 'Stock in' && !pendingStock.length) || (tab === 'Sales' && !pendingSales.length) || (tab === 'Activities' && !pendingActivities.length) || (tab === 'Expenses' && !pendingExpenses.length)) && (
+      {((tab === 'Stock in' && !pendingStock.length) || (tab === 'Sales' && !pendingSales.length) || (tab === 'Credits' && !pendingCredits.length) || (tab === 'Activities' && !pendingActivities.length) || (tab === 'Expenses' && !pendingExpenses.length)) && (
         <Panel><p className="text-sm text-stone-500">Nothing is waiting in this queue.</p></Panel>
       )}
       <h2 className="mb-3 mt-8 text-lg font-semibold">Approval history</h2>

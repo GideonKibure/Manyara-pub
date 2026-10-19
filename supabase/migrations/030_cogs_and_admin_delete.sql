@@ -59,7 +59,7 @@ begin
         and (
           reference_id = p_id::text
           or reference_id = v_code
-          or (reference_type in ('sale', 'bill') and reference_id = p_id::text)
+          or (reference_type = 'sale' and reference_id = p_id::text)
         );
     delete from public.sales_items where transaction_id = p_id;
     delete from public.sales_transactions where id = p_id;

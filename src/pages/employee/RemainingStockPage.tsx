@@ -14,6 +14,11 @@ import type { CogsExpenseLine, CogsLine, DayDebt } from '@/types'
 import { dateKey, dateKeyDaysAgo } from '@/utils/dates'
 import { cn } from '@/utils/cn'
 
+function formatQty(value: number) {
+  const rounded = Math.round(value * 2) / 2
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+}
+
 type Step = 'count' | 'expenses' | 'debts' | 'mobile' | 'sheet'
 
 const steps: Step[] = ['count', 'expenses', 'debts', 'mobile', 'sheet']
@@ -45,6 +50,7 @@ export function RemainingStockPage() {
     [app.products, app.sales, app.movements],
   )
   const [remaining, setRemaining] = useState<Record<string, number | null>>({})
+  const [costs, setCosts] = useState<Record<string, number | null>>({})
   const [skipped, setSkipped] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [description, setDescription] = useState('')
@@ -81,8 +87,10 @@ export function RemainingStockPage() {
     const value = remaining[product.id]
     const left = value == null ? opening : value
     const sold = Math.max(0, opening - left)
-    const profit = sold * (product.sellingPrice - product.costPrice)
-    return { product, opening, left, sold, profit, revenue: sold * product.sellingPrice, over: left > opening || left < 0 || !Number.isInteger(left) }
+    const unitCost = costs[product.id] ?? product.costPrice
+    const profit = sold * (product.sellingPrice - unitCost)
+    const halfOk = Number.isFinite(left) && left >= 0 && Math.abs(left * 2 - Math.round(left * 2)) < 1e-6
+    return { product, opening, left, sold, unitCost, profit, revenue: sold * product.sellingPrice, over: left > opening || left < 0 || !halfOk }
   })
   const openingUnits = filled.reduce((sum, row) => sum + row.opening, 0)
   const soldUnits = filled.reduce((sum, row) => sum + row.sold, 0)
@@ -103,15 +111,15 @@ export function RemainingStockPage() {
   const sheetMobile = myClose?.mobileReceived ?? mobile ?? 0
 
   const summary = [
-    { label: t('remainOpening'), value: String(openingUnits), hint: t('remainUnits'), icon: Package, tone: 'from-stone-800 to-stone-950 text-white' },
-    { label: t('remainSold'), value: String(soldUnits), hint: app.money(revenue), icon: TrendingUp, tone: 'from-amber-500 to-amber-800 text-white' },
+    { label: t('remainOpening'), value: formatQty(openingUnits), hint: t('remainUnits'), icon: Package, tone: 'from-stone-800 to-stone-950 text-white' },
+    { label: t('remainSold'), value: formatQty(soldUnits), hint: app.money(revenue), icon: TrendingUp, tone: 'from-amber-500 to-amber-800 text-white' },
     { label: t('remainResult'), value: app.money(profit), hint: profit < 0 ? t('remainLoss') : t('remainGain'), icon: profit < 0 ? TrendingDown : Wallet, tone: profit < 0 ? 'from-rose-700 to-rose-900 text-white' : 'from-emerald-600 to-emerald-900 text-white' },
-    { label: t('remainLeft'), value: String(leftUnits), hint: t('remainUnits'), icon: ClipboardCheck, tone: 'from-white to-amber-50 text-ink border border-white/80' },
+    { label: t('remainLeft'), value: formatQty(leftUnits), hint: t('remainUnits'), icon: ClipboardCheck, tone: 'from-white to-amber-50 text-ink border border-white/80' },
   ] as const
 
   return (
     <div className="employee-dash remaining-close relative -mx-3 -mt-4 min-h-[calc(100dvh-4.5rem)] px-3 pb-40 pt-5 sm:-mx-4 sm:-mt-6 sm:px-4 sm:pt-6 md:-mx-8 md:-mb-8 md:px-8 md:pb-10">
-      <div className="mx-auto max-w-5xl space-y-5">
+      <div className="mx-auto w-full max-w-5xl space-y-5">
         <PageHeader title={t('remainTitle')} description={t('remainBody')} />
         <label className="glass-panel flex w-fit items-center gap-3 rounded-full px-4 py-2 text-sm font-semibold text-ink">
           <span>{t('cogsDay')}</span>
@@ -134,7 +142,7 @@ export function RemainingStockPage() {
               <button
                 key={item}
                 type="button"
-                className={cn('rounded-2xl px-2 py-2 text-xs font-semibold uppercase tracking-wide transition', step === item ? 'bg-amber-700 text-white' : 'glass-panel text-stone-600')}
+                className={cn('rounded-2xl px-2 py-2 text-[11px] font-semibold uppercase tracking-wide transition sm:text-xs', step === item ? 'bg-amber-700 text-white' : 'glass-panel text-stone-600')}
                 onClick={() => setStep(item)}
               >
                 {t(stepLabel[item])}
@@ -170,44 +178,57 @@ export function RemainingStockPage() {
                 <div className="grid gap-3">
                   {filled.map((row) => (
                     <article key={row.product.id} className="glass-panel reveal-card overflow-hidden rounded-[1.75rem]">
-                      <div className="flex items-center gap-3 border-b border-white/70 bg-gradient-to-r from-amber-50/80 to-transparent px-4 py-3">
-                        <ProductThumb src={row.product.imageUrl} name={row.product.name} className="h-14 w-14 rounded-2xl" />
-                        <div className="min-w-0 flex-1">
-                          <h2 className="truncate text-base font-semibold text-ink">{row.product.name}</h2>
-                          <p className="text-xs text-stone-500">{t('remainOpening')} {row.opening}</p>
+                      <div className="flex flex-col gap-3 border-b border-white/70 bg-gradient-to-r from-amber-50/80 to-transparent px-3 py-3 sm:flex-row sm:items-center sm:px-4">
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                          <ProductThumb src={row.product.imageUrl} name={row.product.name} className="h-12 w-12 shrink-0 rounded-2xl sm:h-14 sm:w-14" />
+                          <div className="min-w-0 flex-1">
+                            <h2 className="truncate text-base font-semibold text-ink">{row.product.name}</h2>
+                            <p className="text-xs text-stone-500">{t('remainOpening')} {formatQty(row.opening)}</p>
+                          </div>
                         </div>
-                        <span className="flex items-center gap-2">
+                        <span className="flex flex-wrap items-center gap-2">
                           <span className={cn('rounded-full px-3 py-1 text-xs font-semibold', row.profit < 0 ? 'bg-rose-100 text-rose-900' : 'bg-emerald-100 text-emerald-900')}>{app.money(row.profit)}</span>
                           <Button type="button" size="sm" variant="danger" onClick={() => setSkipped((current) => [...current, row.product.id])}>{t('deleteRecord')}</Button>
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+                      <div className="grid grid-cols-2 gap-3 p-3 sm:p-4 lg:grid-cols-5">
                         <label className="col-span-2 sm:col-span-1">
                           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-stone-500">{t('remainLeft')}</span>
                           <NumberInput
+                            allowDecimal
                             value={remaining[row.product.id] ?? row.opening}
                             onValueChange={(next) => setRemaining((current) => ({ ...current, [row.product.id]: next }))}
                             className="rounded-2xl border-amber-200/80 bg-white text-lg font-semibold"
                           />
+                          <span className="mt-1 block text-[11px] leading-4 text-stone-500">{t('remainHalfHint')}</span>
+                        </label>
+                        <label className="col-span-2 sm:col-span-1">
+                          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-stone-500">{t('remainBuyPrice')}</span>
+                          <NumberInput
+                            value={costs[row.product.id] ?? row.product.costPrice}
+                            onValueChange={(next) => setCosts((current) => ({ ...current, [row.product.id]: next }))}
+                            className="rounded-2xl border-amber-200/80 bg-white text-lg font-semibold"
+                          />
+                          <span className="mt-1 block text-[11px] leading-4 text-stone-500">{t('remainBuyHint')}</span>
                         </label>
                         <div className="rounded-2xl bg-stone-950 px-3 py-3 text-white">
                           <p className="text-[11px] uppercase tracking-wide text-stone-400">{t('remainSold')}</p>
-                          <p className="mt-1 text-xl font-semibold tabular-nums">{row.sold}</p>
+                          <p className="mt-1 text-xl font-semibold tabular-nums">{formatQty(row.sold)}</p>
                         </div>
                         <div className="rounded-2xl bg-amber-50 px-3 py-3">
                           <p className="text-[11px] uppercase tracking-wide text-amber-800">{t('remainRevenue')}</p>
-                          <p className="mt-1 text-sm font-semibold tabular-nums text-ink">{app.money(row.revenue)}</p>
+                          <p className="mt-1 break-words text-sm font-semibold tabular-nums text-ink">{app.money(row.revenue)}</p>
                         </div>
                         <div className={cn('rounded-2xl px-3 py-3', row.profit < 0 ? 'bg-rose-50' : 'bg-emerald-50')}>
                           <p className={cn('text-[11px] uppercase tracking-wide', row.profit < 0 ? 'text-rose-800' : 'text-emerald-800')}>{t('remainResult')}</p>
-                          <p className="mt-1 text-sm font-semibold tabular-nums text-ink">{app.money(row.profit)}</p>
+                          <p className="mt-1 break-words text-sm font-semibold tabular-nums text-ink">{app.money(row.profit)}</p>
                         </div>
                       </div>
                     </article>
                   ))}
                 </div>
                 {blocked && <p className="text-sm text-rose-700">{t('remainOver')}</p>}
-                <Button type="submit" variant="gold" className="w-full md:w-auto" disabled={blocked || !filled.length}>{t('cogsNext')}</Button>
+                <Button type="submit" variant="gold" className="w-full sm:w-auto" disabled={blocked || !filled.length}>{t('cogsNext')}</Button>
               </form>
             )}
           </>
@@ -295,7 +316,7 @@ export function RemainingStockPage() {
                       setBusy(true)
                       let saleId: string | undefined = myCount?.id
                       if (!saleId && filled.some((row) => row.sold > 0)) {
-                        const counted = await app.sendRemainingCount(filled.map((row) => ({ productId: row.product.id, remaining: row.left })))
+                        const counted = await app.sendRemainingCount(filled.map((row) => ({ productId: row.product.id, remaining: row.left, unitCost: row.unitCost })))
                         if (!counted.ok) {
                           setBusy(false)
                           return

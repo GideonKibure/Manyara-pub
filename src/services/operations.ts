@@ -40,7 +40,7 @@ import type {
   StockInDraft,
   StockInTransaction,
 } from '@/types'
-import { dateKey, dateKeyDaysAgo } from '@/utils/dates'
+import { dateKey, isEmployeeAllowedDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { allocateInvoiceRef } from '@/utils/invoice'
 
@@ -527,6 +527,9 @@ export function submitStockIn(db: Database, userId: string, draft: StockInDraft)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.deliveryDate) || draft.deliveryDate > dateKey()) {
     return fail('Enter a delivery date that is today or earlier.')
   }
+  if (actor.profile.role !== 'admin' && !isEmployeeAllowedDay(draft.deliveryDate)) {
+    return fail('You can only record stock in for today or the two days before.')
+  }
   const supplierName = draft.supplierName.trim()
   if (supplierName.length < 2) return fail('Enter the supplier.')
   if ((draft.notes ?? '').trim().length > 400) return fail('Notes are too long.')
@@ -777,7 +780,8 @@ export function submitSale(db: Database, userId: string, draft: SaleDraft): OpRe
   const coded = takeCode(db, 'sale', 'SL')
   const stamped = now()
   const opened = new Date(draft.generatedAt ?? '')
-  const generatedAt = !Number.isNaN(opened.getTime()) && opened.getTime() <= Date.now() + 60_000 && Date.now() - opened.getTime() < 12 * 60 * 60 * 1000
+  const openedOk = !Number.isNaN(opened.getTime()) && opened.getTime() <= Date.now() + 60_000
+  const generatedAt = openedOk && (actor.profile.role === 'admin' || isEmployeeAllowedDay(dateKey(opened)))
     ? opened.toISOString()
     : stamped
   const openBill = recordKind === 'bill'
@@ -1154,6 +1158,9 @@ export function submitExpense(db: Database, userId: string, draft: ExpenseDraft)
   if (!Number.isInteger(draft.amount) || draft.amount < 1 || draft.amount > 100_000_000) return fail('Enter the amount spent.')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.spentOn) || draft.spentOn > dateKey()) {
     return fail('Enter a date that is today or earlier.')
+  }
+  if (actor.profile.role !== 'admin' && !isEmployeeAllowedDay(draft.spentOn)) {
+    return fail('You can only record expenses for today or the two days before.')
   }
   if ((draft.notes ?? '').trim().length > 400) return fail('Notes are too long.')
 
@@ -1692,11 +1699,10 @@ export function saveDayClose(
   const day = input.day.slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return fail('Choose a valid day.')
   const today = dateKey()
-  const yesterday = dateKeyDaysAgo(1)
   if (actor.profile.role === 'admin') {
     if (day > today) return fail('COGS cannot be recorded for a future day.')
-  } else if (day !== today && day !== yesterday) {
-    return fail('You can only record COGS for yesterday or today.')
+  } else if (!isEmployeeAllowedDay(day)) {
+    return fail('You can only record COGS for today or the two days before.')
   }
   const owner = actor.profile.role === 'admin' && input.submittedBy ? input.submittedBy : userId
   const existing = (db.dayCloses ?? []).find((item) => item.day === day && item.submittedBy === owner)

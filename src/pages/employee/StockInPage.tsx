@@ -10,7 +10,7 @@ import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
 import type { SaleSize } from '@/types'
-import { dateKey, dateKeyDaysAgo } from '@/utils/dates'
+import { dateKey, employeeMinDateKey, isEmployeeAllowedDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { nextInvoiceRef } from '@/utils/invoice'
 import { stockInTotal, stockInUnits } from '@/utils/labels'
@@ -83,7 +83,7 @@ export function StockInPage() {
   const supplierReady = supplierName.trim().length >= 2
   const employeeSubmit = app.user?.role !== 'admin'
   const today = dateKey()
-  const yesterday = dateKeyDaysAgo(1)
+  const minDay = employeeMinDateKey()
   const defaultCost = selected ? sizeCost(selected, chosenSize?.name ?? sizeName) : null
   const preview = useMemo(() => lines.map((line) => {
     const product = app.products.find((item) => item.id === line.productId)
@@ -259,12 +259,12 @@ export function StockInPage() {
           <Field label={t('stockDate')}>
             <TextInput
               type="date"
-              min={employeeSubmit ? yesterday : undefined}
+              min={employeeSubmit ? minDay : undefined}
               max={today}
               value={deliveryDate}
               onChange={(event) => {
                 const next = event.target.value
-                if (employeeSubmit && next !== yesterday && next !== today && next !== source?.deliveryDate) return
+                if (employeeSubmit && !isEmployeeAllowedDay(next, source?.deliveryDate)) return
                 setDeliveryDate(next)
               }}
             />

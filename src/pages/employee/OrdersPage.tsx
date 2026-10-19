@@ -7,7 +7,7 @@ import { SaleDetail } from '@/features/transactions/Details'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { SalesTransaction } from '@/types'
-import { formatDateTime } from '@/utils/dates'
+import { asDateKey, formatDateTime, isEmployeeAllowedDay } from '@/utils/dates'
 import { billBalance, recordedTotal } from '@/utils/labels'
 
 export function OrdersPage() {
@@ -18,6 +18,7 @@ export function OrdersPage() {
   const orders = useMemo(
     () => app.sales
       .filter((sale) => sale.submittedBy === app.user?.id)
+      .filter((sale) => isEmployeeAllowedDay(asDateKey(sale.generatedAt || sale.submittedAt)))
       .filter((sale) => kind === 'all' || (sale.recordKind ?? 'sale') === kind)
       .sort((a, b) => (b.submittedAt || b.generatedAt).localeCompare(a.submittedAt || a.generatedAt)),
     [app.sales, app.user?.id, kind],

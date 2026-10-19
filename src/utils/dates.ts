@@ -21,6 +21,28 @@ export function dateKeyDaysAgo(days: number) {
   return dateKey(addDays(-days))
 }
 
+export const EMPLOYEE_LOOKBACK_DAYS = 2
+
+export function employeeMinDateKey() {
+  return dateKeyDaysAgo(EMPLOYEE_LOOKBACK_DAYS)
+}
+
+export function isEmployeeAllowedDay(day: string, extra?: string) {
+  const today = dateKey()
+  const min = employeeMinDateKey()
+  if (extra && day === extra) return true
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) && day >= min && day <= today
+}
+
+export function isoOnEmployeeDay(day: string) {
+  if (!isEmployeeAllowedDay(day)) return new Date().toISOString()
+  const [year, month, date] = day.split('-').map(Number)
+  const now = new Date()
+  const local = new Date(year, month - 1, date, now.getHours(), now.getMinutes(), now.getSeconds())
+  if (local.getTime() > Date.now() + 60_000) return new Date().toISOString()
+  return local.toISOString()
+}
+
 export function asDateKey(value: string) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
   const date = new Date(value)

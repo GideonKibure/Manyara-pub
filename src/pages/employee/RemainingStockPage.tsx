@@ -11,7 +11,7 @@ import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
 import type { CogsExpenseLine, CogsLine, DayDebt } from '@/types'
-import { dateKey, dateKeyDaysAgo } from '@/utils/dates'
+import { dateKey, dateKeyDaysAgo, employeeMinDateKey, isEmployeeAllowedDay } from '@/utils/dates'
 import { cn } from '@/utils/cn'
 
 function formatQty(value: number) {
@@ -36,6 +36,7 @@ export function RemainingStockPage() {
   const allowed = app.settings.allowRemainingCount
   const today = dateKey()
   const yesterday = dateKeyDaysAgo(1)
+  const minDay = employeeMinDateKey()
   const [cogsDay, setCogsDay] = useState(yesterday)
   const rows = useMemo(
     () =>
@@ -125,12 +126,12 @@ export function RemainingStockPage() {
           <span>{t('cogsDay')}</span>
           <input
             type="date"
-            min={yesterday}
+            min={minDay}
             max={today}
             value={cogsDay}
             onChange={(event) => {
               const next = event.target.value
-              if (next !== yesterday && next !== today) return
+              if (!isEmployeeAllowedDay(next)) return
               setCogsDay(next)
             }}
             className="bg-transparent font-semibold outline-none"

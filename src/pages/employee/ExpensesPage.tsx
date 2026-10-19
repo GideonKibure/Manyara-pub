@@ -6,7 +6,7 @@ import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
 import { Modal } from '@/components/ui/Modal'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
-import { dateKey, formatDate } from '@/utils/dates'
+import { dateKey, employeeMinDateKey, formatDate, isEmployeeAllowedDay } from '@/utils/dates'
 
 export function ExpensesPage() {
   const app = useApp()
@@ -35,7 +35,17 @@ export function ExpensesPage() {
           <NumberInput value={amount} onValueChange={setAmount} />
         </Field>
         <Field label={t('expenseDate')}>
-          <TextInput type="date" max={dateKey()} value={spentOn} onChange={(event) => setSpentOn(event.target.value)} />
+          <TextInput
+            type="date"
+            min={admin ? undefined : employeeMinDateKey()}
+            max={dateKey()}
+            value={spentOn}
+            onChange={(event) => {
+              const next = event.target.value
+              if (!admin && !isEmployeeAllowedDay(next, corrects?.spentOn)) return
+              setSpentOn(next)
+            }}
+          />
         </Field>
         <Field label={t('expenseNotes')}>
           <TextArea value={notes} onChange={(event) => setNotes(event.target.value)} />

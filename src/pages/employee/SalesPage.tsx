@@ -10,7 +10,7 @@ import { useApp } from '@/context/AppContext'
 import { saleOptions } from '@/features/products/offer'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { BillPayment, RecordKind, SalePortion, SaleSize } from '@/types'
-import { formatDateTime, asDateKey, dateKey, formatDate } from '@/utils/dates'
+import { formatDateTime, asDateKey, dateKey, employeeMinDateKey, formatDate, isEmployeeAllowedDay, isoOnEmployeeDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { billBalance, saleTotal } from '@/utils/labels'
 import { cn } from '@/utils/cn'
@@ -65,6 +65,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
   const remainingMode = app.user?.role !== 'admin' && app.settings.allowRemainingCount
   const employeeSale = app.user?.role !== 'admin' && !isBill && !editing && !corrects
   const employeeBill = app.user?.role !== 'admin' && isBill && !editing && !corrects
+  const employeeRecord = app.user?.role !== 'admin' && !editing
   const employeeEach = employeeSale || employeeBill
   const [search, setSearch] = useState('')
   const active = app.products.filter((product) => product.isActive)
@@ -87,7 +88,11 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
   const [editingLineId, setEditingLineId] = useState<string | null>(null)
   const [customerName, setCustomerName] = useState(source?.customerName && source.customerName !== 'Walk-in' ? source.customerName : source?.customerName ?? '')
   const [payment, setPayment] = useState<BillPayment>(isBill ? source?.paymentStatus ?? 'unpaid' : 'paid')
-  const [generatedAt, setGeneratedAt] = useState(source?.generatedAt ?? new Date().toISOString())
+  const [recordDay, setRecordDay] = useState(() => {
+    const day = asDateKey(source?.generatedAt ?? dateKey()) || dateKey()
+    return isEmployeeAllowedDay(day) ? day : dateKey()
+  })
+  const [generatedAt, setGeneratedAt] = useState(source?.generatedAt ?? isoOnEmployeeDay(dateKey()))
   const [notes, setNotes] = useState(source?.notes ?? '')
   const [review, setReview] = useState(false)
   const [openDraft, setOpenDraft] = useState<string | null>(null)
@@ -152,7 +157,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
   const openGroup = billGroups.find((group) => group.key === openDraft)
   const daySales = employeeSale
     ? app.sales
-        .filter((sale) => sale.submittedBy === app.user?.id && sale.recordKind !== 'bill' && sale.status === 'approved' && !sale.isLoss && asDateKey(sale.reviewedAt || sale.submittedAt || sale.generatedAt) === dateKey())
+        .filter((sale) => sale.submittedBy === app.user?.id && sale.recordKind !== 'bill' && sale.status === 'approved' && !sale.isLoss && asDateKey(sale.reviewedAt || sale.submittedAt || sale.generatedAt) === recordDay)
         .flatMap((sale) => {
           const bill = sale.sourceBillId ? app.sales.find((item) => item.id === sale.sourceBillId) : undefined
           const customer = sale.customerName.trim() || bill?.customerName.trim() || ''
@@ -265,7 +270,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     }
     blankBillFields()
     setNotes('')
-    setGeneratedAt(new Date().toISOString())
+    setGeneratedAt(isoOnEmployeeDay(recordDay))
   }
 
   function addLine() {
@@ -353,7 +358,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     setSearch('')
     setSizeName('one')
     setPortion('full')
-    setGeneratedAt(new Date().toISOString())
+    setGeneratedAt(isoOnEmployeeDay(recordDay))
     setEditingLineId(null)
     setReview(false)
     setSubmitError('')
@@ -455,7 +460,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     setProductId('')
     setQuantity(null)
     setSearch('')
-    setGeneratedAt(new Date().toISOString())
+    setGeneratedAt(isoOnEmployeeDay(recordDay))
     if (params.get('correct')) navigate(isBill ? '/employee/bills' : '/employee/sales', { replace: true })
   }
 
@@ -573,11 +578,28 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
             )}
             {isBill && <Field label={t('billCustomer')}><TextInput value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></Field>}
             {addingToCustomer && <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-950">{t('billAddingFor')} {customerName.trim()}.</p>}
-            <div className="rounded-xl bg-stone-50 px-3 py-2">
-              <p className="text-xs uppercase tracking-wide text-stone-500">{t('billGenerated')}</p>
-              <p className="mt-1 font-medium">{formatDateTime(editing ? editing.generatedAt : generatedAt)}</p>
-              <p className="mt-1 text-sm leading-5 text-stone-500">{t('billGeneratedHint')}</p>
-            </div>
+            {employeeRecord ? (
+              <Field label={t('recordDay')} hint={t('recordDayHint')}>
+                <TextInput
+                  type="date"
+                  min={employeeMinDateKey()}
+                  max={dateKey()}
+                  value={recordDay}
+                  onChange={(event) => {
+                    const next = event.target.value
+                    if (!isEmployeeAllowedDay(next)) return
+                    setRecordDay(next)
+                    setGeneratedAt(isoOnEmployeeDay(next))
+                  }}
+                />
+              </Field>
+            ) : (
+              <div className="rounded-xl bg-stone-50 px-3 py-2">
+                <p className="text-xs uppercase tracking-wide text-stone-500">{t('billGenerated')}</p>
+                <p className="mt-1 font-medium">{formatDateTime(editing ? editing.generatedAt : generatedAt)}</p>
+                <p className="mt-1 text-sm leading-5 text-stone-500">{t('billGeneratedHint')}</p>
+              </div>
+            )}
             {isBill && !employeeBill ? (
               <Field label={t('billPayment')} hint={t('billPayFirst')}>
                 <div className="grid grid-cols-2 gap-2">

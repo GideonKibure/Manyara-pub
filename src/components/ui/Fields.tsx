@@ -37,11 +37,13 @@ export function NumberInput({
   onFocus,
   onBlur,
   allowDecimal = false,
+  decimalPlaces = 1,
   ...props
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'> & {
   value: number | null
   onValueChange: (value: number | null) => void
   allowDecimal?: boolean
+  decimalPlaces?: 1 | 2
 }) {
   const [text, setText] = useState(value == null || Number.isNaN(value) ? '' : String(value))
   const editing = useRef(false)
@@ -71,7 +73,7 @@ export function NumberInput({
       }}
       onChange={(event) => {
         const raw = event.target.value
-        const allowed = allowDecimal ? /^\d*\.?\d{0,1}$/ : /^\d+$/
+        const allowed = !allowDecimal ? /^\d+$/ : decimalPlaces === 2 ? /^\d*\.?\d{0,2}$/ : /^\d*\.?\d{0,1}$/
         if (raw !== '' && !allowed.test(raw)) return
         setText(raw)
         if (raw === '' || raw === '.' || raw.endsWith('.')) return

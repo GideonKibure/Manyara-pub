@@ -535,10 +535,10 @@ export function submitStockIn(db: Database, userId: string, draft: StockInDraft)
   for (const line of draft.items) {
     const product = db.products.find((item) => item.id === line.productId && item.isActive)
     if (!product) return fail('Choose an active product.')
-    if (!Number.isInteger(line.receivedQuantity) || line.receivedQuantity < 1 || line.receivedQuantity > 100_000) {
+    if (!Number.isFinite(line.receivedQuantity) || line.receivedQuantity <= 0 || line.receivedQuantity > 100_000) {
       return fail(`Enter a valid quantity for ${product.name}.`)
     }
-    if (!Number.isInteger(line.costPerStockUnit) || line.costPerStockUnit < 0 || line.costPerStockUnit > 100_000_000) {
+    if (!Number.isFinite(line.costPerStockUnit) || line.costPerStockUnit < 0 || line.costPerStockUnit > 100_000_000) {
       return fail(`Enter a valid cost for ${product.name}.`)
     }
     const stockQuantity = line.receivedQuantity * product.conversionFactor
@@ -1088,10 +1088,10 @@ export function editStockIn(db: Database, userId: string, transactionId: string,
   for (const line of draft.items) {
     const product = db.products.find((item) => item.id === line.productId && item.isActive)
     if (!product) return fail('Choose an active product.')
-    if (!Number.isInteger(line.receivedQuantity) || line.receivedQuantity < 1 || line.receivedQuantity > 100_000) {
+    if (!Number.isFinite(line.receivedQuantity) || line.receivedQuantity <= 0 || line.receivedQuantity > 100_000) {
       return fail(`Enter a valid quantity for ${product.name}.`)
     }
-    if (!Number.isInteger(line.costPerStockUnit) || line.costPerStockUnit < 0 || line.costPerStockUnit > 100_000_000) {
+    if (!Number.isFinite(line.costPerStockUnit) || line.costPerStockUnit < 0 || line.costPerStockUnit > 100_000_000) {
       return fail(`Enter a valid cost for ${product.name}.`)
     }
     const stockQuantity = line.receivedQuantity * product.conversionFactor

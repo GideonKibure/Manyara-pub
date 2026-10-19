@@ -267,7 +267,7 @@ export function AppShell({
       {idlePrompt && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center p-3 sm:items-center sm:p-4">
           <div className="absolute inset-0 bg-black/60" />
-          <div role="dialog" aria-modal="true" aria-labelledby="idle-title" className="relative w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+          <div role="dialog" aria-modal="true" aria-labelledby="idle-title" className="review-sheet relative w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
             <h2 id="idle-title" className="text-xl font-semibold text-ink">{t('idleTitle')}</h2>
             <p className="mt-2 text-sm leading-6 text-stone-600">{t('idleBody')}</p>
             <p className="mt-3 text-sm font-semibold text-amber-900">{t('idleRemain')} {idleLeft}s</p>

@@ -268,6 +268,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [idlePrompt, setIdlePrompt] = useState(false)
   const [idleLeft, setIdleLeft] = useState(Math.ceil(IDLE_GRACE_MS / 1000))
   const idleRef = useRef({ last: Date.now(), warnedAt: 0 })
+  const idlePromptRef = useRef(false)
   const dbRef = useRef(db)
   const sessionRef = useRef(session)
   dbRef.current = db
@@ -337,6 +338,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const staySignedIn = useCallback(() => {
     idleRef.current.last = Date.now()
     idleRef.current.warnedAt = 0
+    idlePromptRef.current = false
     setIdlePrompt(false)
     setIdleLeft(Math.ceil(IDLE_GRACE_MS / 1000))
   }, [])
@@ -344,10 +346,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session) {
       idleRef.current = { last: Date.now(), warnedAt: 0 }
+      idlePromptRef.current = false
       setIdlePrompt(false)
       return
     }
     idleRef.current = { last: Date.now(), warnedAt: 0 }
+    idlePromptRef.current = false
     setIdlePrompt(false)
     let stopped = false
     const bump = () => {
@@ -355,34 +359,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
       idleRef.current.last = Date.now()
     }
     const finish = (reason: LockReason) => {
-      if (stopped || !sessionRef.current) return
+      if (stopped || !sessionRef.current || !idlePromptRef.current) return
       stopped = true
       markLockReason(reason)
       endSession()
+    }
+    const openIdlePrompt = () => {
+      idleRef.current.warnedAt = Date.now()
+      idlePromptRef.current = true
+      setIdleLeft(Math.ceil(IDLE_GRACE_MS / 1000))
+      setIdlePrompt(true)
     }
     const events = ['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'] as const
     for (const name of events) window.addEventListener(name, bump, { capture: true, passive: true })
     window.addEventListener('pointermove', bump, { capture: true, passive: true })
     document.addEventListener('scroll', bump, { capture: true, passive: true })
+    const onVisible = () => {
+      if (stopped || document.visibilityState !== 'visible' || !sessionRef.current) return
+      if (Date.now() - idleRef.current.last >= IDLE_MS) openIdlePrompt()
+    }
+    document.addEventListener('visibilitychange', onVisible)
     const timer = window.setInterval(() => {
       if (stopped || !sessionRef.current) return
       const now = Date.now()
       const { last, warnedAt } = idleRef.current
       if (!warnedAt) {
-        if (now - last >= IDLE_MS) {
-          idleRef.current.warnedAt = now
-          setIdleLeft(Math.ceil(IDLE_GRACE_MS / 1000))
-          setIdlePrompt(true)
-        }
+        if (now - last >= IDLE_MS) openIdlePrompt()
         return
       }
+      if (document.visibilityState !== 'visible') return
       const left = Math.max(0, Math.ceil((IDLE_GRACE_MS - (now - warnedAt)) / 1000))
       setIdleLeft(left)
-      if (left <= 0) finish('idle')
+      if (left <= 0 && idlePromptRef.current) finish('idle')
     }, 1000)
     return () => {
       stopped = true
       window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
       for (const name of events) window.removeEventListener(name, bump, { capture: true })
       window.removeEventListener('pointermove', bump, { capture: true })
       document.removeEventListener('scroll', bump, { capture: true })

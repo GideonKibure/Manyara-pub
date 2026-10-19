@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ProductPicker } from '@/components/ProductPicker'
+import { ProductPicker, ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, SelectInput, TextArea, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel } from '@/components/ui/Feedback'
@@ -90,6 +90,8 @@ export function StockInPage() {
     const stockQuantity = line.receivedQuantity * (product?.conversionFactor ?? 1)
     return { ...line, name: product?.name ?? t('productsProduct'), imageUrl: product?.imageUrl, stockQuantity, total: line.costPerStockUnit * stockQuantity }
   }), [lines, app.products, t])
+  const unitsTotal = stockInUnits(preview.map((line) => ({ stockQuantity: line.stockQuantity })))
+  const costTotal = stockInTotal(preview.map((line) => ({ totalCost: line.total })))
 
   function sizeOf(line: { sizeName: SaleSize }) {
     return line.sizeName === 'one' ? '' : ` · ${t(sizeLabel(line.sizeName))}`
@@ -117,7 +119,7 @@ export function StockInPage() {
 
   function addLine() {
     if (!supplierReady) return
-    if (!selected || quantity == null || cost == null || !Number.isInteger(quantity) || quantity < 1 || !Number.isInteger(cost) || cost < 0) {
+    if (!selected || quantity == null || cost == null || !Number.isFinite(quantity) || quantity <= 0 || quantity > 100_000 || !Number.isFinite(cost) || cost < 0 || cost > 100_000_000) {
       setAddHint(t('stockNeed'))
       return
     }
@@ -306,9 +308,11 @@ export function StockInPage() {
             </Field>
           )}
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={`${t('stockQuantity')} (${receiveUnit?.name ?? 'unit'})`}><NumberInput value={quantity} onValueChange={setQuantity} /></Field>
+            <Field label={`${t('stockQuantity')} (${receiveUnit?.name ?? 'unit'})`}><NumberInput allowDecimal decimalPlaces={2} value={quantity} onValueChange={setQuantity} /></Field>
             <Field label={`${t('stockCost')} ${stockUnit?.abbreviation ?? 'unit'}`} hint={t('stockCostHint')}>
               <NumberInput
+                allowDecimal
+                decimalPlaces={2}
                 value={cost}
                 onValueChange={setCost}
                 placeholder={defaultCost != null ? String(defaultCost) : undefined}
@@ -337,14 +341,26 @@ export function StockInPage() {
           </div>
           <ol className="mt-3 space-y-2">
             {preview.map((line, index) => (
-              <li key={line.id} ref={index === preview.length - 1 ? newestLine : undefined} className="rounded-xl bg-stone-50 px-3 py-2.5 text-sm">
-                <p className="font-medium text-ink"><span className="mr-1.5 text-stone-400">{index + 1}.</span>{line.name}{sizeOf(line)}</p>
-                <p className="mt-0.5 text-stone-500">{line.receivedQuantity} · {line.stockQuantity} · {app.money(line.total)}</p>
+              <li
+                key={line.id}
+                ref={index === preview.length - 1 ? newestLine : undefined}
+                className="review-line glass-panel cursor-pointer rounded-2xl p-2.5"
+                style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+                onClick={() => setReview(true)}
+              >
+                <div className="flex items-center gap-3">
+                  <ProductThumb src={line.imageUrl} name={line.name} className="h-12 w-12 rounded-xl" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-ink">{line.name}{sizeOf(line)}</p>
+                    <p className="mt-0.5 text-xs text-stone-500">{line.receivedQuantity} · {line.stockQuantity} · {app.money(line.costPerStockUnit)}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold tabular-nums text-ink">{app.money(line.total)}</p>
+                </div>
               </li>
             ))}
-            {!preview.length && <li className="rounded-xl border border-dashed border-stone-300 px-3 py-6 text-center text-sm text-stone-500">{t('stockNone')}</li>}
+            {!preview.length && <li className="rounded-2xl border border-dashed border-white/70 bg-white/30 px-3 py-8 text-center text-sm text-stone-500">{t('stockNone')}</li>}
           </ol>
-          <p className="mt-4 text-sm font-semibold">{stockInUnits(preview.map((line) => ({ stockQuantity: line.stockQuantity })))} stock units · {app.money(stockInTotal(preview.map((line) => ({ totalCost: line.total }))))}</p>
+          <p className="mt-4 text-sm font-semibold">{unitsTotal} {t('remainUnits')} · {app.money(costTotal)}</p>
           <div className="mt-4 hidden md:block">
             <Button className="w-full" variant="gold" disabled={!preview.length || !supplierReady} onClick={() => setReview(true)}>{editing ? 'Save delivery' : t('stockReview')}</Button>
           </div>
@@ -352,39 +368,67 @@ export function StockInPage() {
       </div>
       {preview.length > 0 && (
         <div className="fixed inset-x-3 z-30 md:hidden" style={{ bottom: 'calc(6.75rem + env(safe-area-inset-bottom))' }}>
-          <Button className="w-full" variant="gold" disabled={!supplierReady} onClick={() => setReview(true)}>{t('stockReview')} · {preview.length}</Button>
+          <Button className="w-full shadow-lg shadow-amber-900/25" variant="gold" disabled={!supplierReady} onClick={() => setReview(true)}>{t('stockReview')} · {preview.length} · {app.money(costTotal)}</Button>
         </div>
       )}
       {review && (
-        <div className="fixed inset-0 z-40 flex flex-col bg-[#f6f3ee]">
-          <header className="flex items-center justify-between gap-3 border-b border-line bg-white px-3 py-3">
-            <button type="button" className="text-sm font-semibold text-ink" disabled={submittingId !== null} onClick={() => setReview(false)}>{t('stockBack')}</button>
-            <h2 className="text-base font-semibold text-ink">{t('stockReview')}</h2>
-            <span className="text-sm tabular-nums text-stone-500">{preview.length}</span>
+        <div className="employee-dash review-sheet fixed inset-0 z-40 flex flex-col">
+          <header className="glass-panel mx-3 mt-[max(0.75rem,env(safe-area-inset-top))] flex items-center justify-between gap-3 rounded-3xl px-4 py-3 sm:mx-4">
+            <button type="button" className="text-sm font-semibold text-amber-900" disabled={submittingId !== null} onClick={() => setReview(false)}>{t('stockBack')}</button>
+            <div className="min-w-0 text-center">
+              <h2 className="truncate text-base font-semibold text-ink">{t('stockReview')}</h2>
+              <p className="truncate text-xs text-stone-500">{supplierName.trim()} · {deliveryDate}</p>
+            </div>
+            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-amber-950">{preview.length}</span>
           </header>
-          <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
-            <p className="text-sm leading-6 text-stone-600">{supplierName.trim()} · {deliveryDate}</p>
-            <p className="text-sm leading-6 text-stone-600">{editing ? 'The invoice number stays the same.' : employeeSubmit ? t('stockReviewLead') : `${t('stockInvoice')} ${invoiceRef}. ${t('stockApproveBody')}`}</p>
-            <Field label={t('stockNotes')}><TextArea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
-            <ol className="space-y-3">
-              {preview.map((line, index) => (
-                <li key={line.id} className="rounded-2xl border border-line bg-white p-3 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">{index + 1}</p>
-                  <p className="mt-1 text-base font-semibold text-ink">{line.name}{sizeOf(line)}</p>
-                  <p className="mt-1 text-sm text-stone-500">{line.receivedQuantity} · {line.stockQuantity}</p>
-                  <p className="mt-1 text-sm font-semibold tabular-nums text-ink">{app.money(line.total)}</p>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <Button size="sm" variant="secondary" disabled={submittingId !== null} onClick={() => editLine(line.id)}><Pencil className="h-4 w-4" aria-hidden="true" />{t('productsEdit')}</Button>
-                    <Button size="sm" variant="danger" disabled={submittingId !== null} onClick={() => removeLine(line.id)}><Trash2 className="h-4 w-4" aria-hidden="true" />{t('salesRemove')}</Button>
-                  </div>
-                  {employeeSubmit && !editing && (
-                    <Button className="mt-2 w-full" size="sm" variant="secondary" loading={submittingId === line.id} disabled={submittingId !== null && submittingId !== line.id} onClick={() => void submitLine(line.id)}>{t('stockSubmit')}</Button>
-                  )}
-                </li>
-              ))}
-            </ol>
+          <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-4">
+            <div className="mx-auto max-w-4xl space-y-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div className="glass-panel rounded-2xl px-3 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t('stockSupplier')}</p>
+                  <p className="mt-1 truncate font-semibold text-ink">{supplierName.trim() || '—'}</p>
+                </div>
+                <div className="glass-panel rounded-2xl px-3 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t('stockDate')}</p>
+                  <p className="mt-1 font-semibold tabular-nums text-ink">{deliveryDate}</p>
+                </div>
+                <div className="glass-panel col-span-2 rounded-2xl px-3 py-3 sm:col-span-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">{t('stockTotal')}</p>
+                  <p className="mt-1 font-semibold tabular-nums text-ink">{unitsTotal} · {app.money(costTotal)}</p>
+                </div>
+              </div>
+              <p className="text-sm leading-6 text-stone-600">{editing ? 'The invoice number stays the same.' : employeeSubmit ? t('stockReviewLead') : `${t('stockInvoice')} ${invoiceRef}. ${t('stockApproveBody')}`}</p>
+              <Field label={t('stockNotes')}><TextArea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
+              <ol className="grid gap-3 sm:grid-cols-2">
+                {preview.map((line, index) => (
+                  <li
+                    key={line.id}
+                    className="review-line glass-panel overflow-hidden rounded-[1.75rem] p-3"
+                    style={{ animationDelay: `${Math.min(index, 10) * 50}ms` }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <ProductThumb src={line.imageUrl} name={line.name} className="h-16 w-16 rounded-2xl" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">{index + 1}</p>
+                        <p className="truncate text-base font-semibold text-ink">{line.name}{sizeOf(line)}</p>
+                        <p className="mt-1 text-sm text-stone-500">{line.receivedQuantity} · {line.stockQuantity} {t('remainUnits')}</p>
+                        <p className="mt-0.5 text-xs text-stone-500">{t('stockCost')} {app.money(line.costPerStockUnit)}</p>
+                        <p className="mt-1 text-sm font-semibold tabular-nums text-ink">{app.money(line.total)}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <Button size="sm" variant="secondary" disabled={submittingId !== null} onClick={() => editLine(line.id)}><Pencil className="h-4 w-4" aria-hidden="true" />{t('productsEdit')}</Button>
+                      <Button size="sm" variant="danger" disabled={submittingId !== null} onClick={() => removeLine(line.id)}><Trash2 className="h-4 w-4" aria-hidden="true" />{t('salesRemove')}</Button>
+                    </div>
+                    {employeeSubmit && !editing && (
+                      <Button className="mt-2 w-full" size="sm" variant="secondary" loading={submittingId === line.id} disabled={submittingId !== null && submittingId !== line.id} onClick={() => void submitLine(line.id)}>{t('stockSubmit')}</Button>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
           </div>
-          <footer className="border-t border-line bg-white p-3">
+          <footer className="glass-panel mx-3 mb-[max(0.75rem,env(safe-area-inset-bottom))] rounded-3xl p-3 sm:mx-4">
             {employeeSubmit && !editing && (
               <Button className="w-full" variant="gold" loading={submittingId === 'all'} disabled={!preview.length || (submittingId !== null && submittingId !== 'all')} onClick={() => void submitAll()}>{t('stockSubmitAll')}</Button>
             )}

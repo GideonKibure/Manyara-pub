@@ -1,4 +1,4 @@
-export const IDLE_MS = 5 * 60 * 1000
+export const IDLE_MS = 30 * 60 * 1000
 export const IDLE_GRACE_MS = 60 * 1000
 export const LOCK_REASON_KEY = 'manyara.lockReason'
 

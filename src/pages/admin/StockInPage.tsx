@@ -28,6 +28,8 @@ export function StockInPage() {
   const [removing, setRemoving] = useState('')
   const [removingBusy, setRemovingBusy] = useState(false)
   const [approving, setApproving] = useState(false)
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
   const pendingCount = app.stockIns.filter((item) => item.status === 'pending').length
   const supplierToRemove = app.suppliers.find((supplier) => supplier.id === removing)
   const rows = useMemo(
@@ -67,16 +69,24 @@ export function StockInPage() {
           {!app.suppliers.length && <li className="py-3 text-sm text-stone-500">{t('suppliersEmpty')}</li>}
         </ul>
       </Panel>
-      <ApproveAllButton
-        count={pendingCount}
-        loading={approving}
-        label={t('approveAllStockIn')}
-        onClick={async () => {
-          setApproving(true)
-          await app.approveAllPending('stock_in')
-          setApproving(false)
-        }}
-      />
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <ApproveAllButton
+          count={pendingCount}
+          loading={approving}
+          className="mb-0 flex-1"
+          label={t('approveAllStockIn')}
+          onClick={async () => {
+            setApproving(true)
+            await app.approveAllPending('stock_in')
+            setApproving(false)
+          }}
+        />
+        {rows.length > 0 && (
+          <Button variant="danger" className="w-full sm:w-auto" onClick={() => setDeleteAllOpen(true)}>
+            {t('deleteAllStockIn')}
+          </Button>
+        )}
+      </div>
       <div className="mb-4 grid gap-3 md:grid-cols-2">
         <TextInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchDeliveries')} aria-label={t('searchDeliveries')} />
         <SelectInput value={status} onChange={(event) => setStatus(event.target.value)} aria-label={t('filterStatus')}>
@@ -147,6 +157,23 @@ export function StockInPage() {
           <Button type="submit" variant="gold">{t('saveSupplier')}</Button>
         </form>
       </Modal>
+      <ConfirmDialog
+        open={deleteAllOpen}
+        title={t('deleteAllStockInTitle')}
+        body={`${rows.length}. ${t('deleteAllStockInBody')}`}
+        confirmLabel={t('deleteAllStockIn')}
+        cancelLabel={t('suppliersCancel')}
+        tone="danger"
+        loading={deletingAll}
+        onClose={() => setDeleteAllOpen(false)}
+        onConfirm={async () => {
+          const ids = rows.map((item) => item.id)
+          setDeletingAll(true)
+          const result = await app.deleteAllRecords('stock_in', ids)
+          setDeletingAll(false)
+          if (result.ok) setDeleteAllOpen(false)
+        }}
+      />
       <ConfirmDialog
         open={Boolean(supplierToRemove)}
         title={t('suppliersRemoveTitle')}

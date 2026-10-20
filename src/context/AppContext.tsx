@@ -198,6 +198,7 @@ interface AppContextValue {
   sendActivity: (draft: ActivityDraft) => Promise<ActionResult>
   sendExpense: (draft: ExpenseDraft) => Promise<ActionResult>
   deleteRecord: (kind: RecordDeleteKind, id: string) => Promise<ActionResult>
+  deleteAllRecords: (kind: RecordDeleteKind, ids: string[]) => Promise<ActionResult>
   saveDayClose: (input: {
     day: string
     remainingSaleId?: string
@@ -703,6 +704,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sendActivity: async (draft) => (remote ? runRemote(() => sendActivityRemote(draft)) : run((database, userId) => submitActivity(database, userId, draft))),
     sendExpense: async (draft) => (remote ? runRemote(() => sendExpenseRemote(draft)) : run((database, userId) => submitExpense(database, userId, draft))),
     deleteRecord: async (kind, id) => (remote ? runRemote(() => deleteRecordRemote(kind, id)) : run((database, userId) => deleteBusinessRecord(database, userId, kind, id))),
+    deleteAllRecords: async (kind, ids) => {
+      const userId = sessionRef.current?.userId
+      if (!userId) {
+        pushToast('error', 'You are not signed in.')
+        return { ok: false, error: 'You are not signed in.' }
+      }
+      if (!ids.length) {
+        pushToast('success', 'Nothing to delete.')
+        return { ok: true, message: 'Nothing to delete.' }
+      }
+      let deleted = 0
+      let error = ''
+      for (const id of ids) {
+        let result: ActionResult
+        if (remote) {
+          result = await deleteRecordRemote(kind, id)
+        } else {
+          const op = deleteBusinessRecord(dbRef.current, userId, kind, id)
+          if (!op.ok) result = { ok: false, error: op.error }
+          else {
+            dbRef.current = op.db
+            saveDatabase(op.db)
+            result = { ok: true, message: op.message }
+          }
+        }
+        if (result.ok) deleted += 1
+        else {
+          error = result.error
+          break
+        }
+      }
+      if (remote) {
+        const loaded = await loadWorkspace()
+        if (loaded.ok) {
+          dbRef.current = loaded.db
+          setDb(loaded.db)
+        }
+      } else {
+        setDb(dbRef.current)
+      }
+      if (!deleted && error) {
+        pushToast('error', error)
+        return { ok: false, error }
+      }
+      const message = `${deleted} record${deleted === 1 ? '' : 's'} deleted.`
+      pushToast(error ? 'error' : 'success', error ? `${message} ${error}` : message)
+      return error ? { ok: false, error } : { ok: true, message }
+    },
     saveDayClose: async (input) => (remote ? runRemote(() => saveDayCloseRemote(input)) : run((database, userId) => saveDayClose(database, userId, input))),
     updateDayClose: async (id, input) => (remote ? runRemote(() => updateDayCloseRemote(id, input)) : run((database, userId) => updateDayClose(database, userId, id, input))),
     deleteDayClose: async (id) => (remote ? runRemote(() => deleteDayCloseRemote(id)) : run((database, userId) => deleteDayClose(database, userId, id))),

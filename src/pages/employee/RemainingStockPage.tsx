@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ClipboardCheck, Package, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ClipboardCheck, Package, Search, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react'
 import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, TextArea, TextInput } from '@/components/ui/Fields'
@@ -10,13 +10,121 @@ import { CogsSheet, type SalesDayRow } from '@/features/reports/SalesDayReport'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
-import type { CogsExpenseLine, CogsLine, DayDebt } from '@/types'
+import type { CogsExpenseLine, CogsLine, DayDebt, Product } from '@/types'
 import { dateKey, dateKeyDaysAgo, employeeMinDateKey, isEmployeeAllowedDay } from '@/utils/dates'
 import { cn } from '@/utils/cn'
 
 function formatQty(value: number) {
   const rounded = Math.round(value * 2) / 2
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+}
+
+function productMatches(product: Product, needle: string) {
+  if (!needle) return true
+  return `${product.name} ${product.sku}`.toLowerCase().includes(needle)
+}
+
+function CountProductCard({
+  product,
+  opening,
+  remaining,
+  cost,
+  onRemaining,
+  onCost,
+  onSkip,
+  highlighted,
+  compact,
+}: {
+  product: Product
+  opening: number
+  remaining: number | null
+  cost: number | null
+  onRemaining: (value: number | null) => void
+  onCost: (value: number | null) => void
+  onSkip?: () => void
+  highlighted?: boolean
+  compact?: boolean
+}) {
+  const app = useApp()
+  const { t } = useI18n()
+  const left = remaining == null ? opening : remaining
+  const sold = Math.max(0, opening - left)
+  const unitCost = cost ?? product.costPrice
+  const profit = sold * (product.sellingPrice - unitCost)
+  const revenue = sold * product.sellingPrice
+  const halfOk = Number.isFinite(left) && left >= 0 && Math.abs(left * 2 - Math.round(left * 2)) < 1e-6
+  const over = left > opening || left < 0 || !halfOk
+
+  return (
+    <article
+      id={`cogs-row-${product.id}`}
+      className={cn(
+        'glass-panel overflow-hidden rounded-[1.75rem] transition',
+        compact ? 'review-line' : 'reveal-card',
+        highlighted ? 'ring-2 ring-amber-600' : '',
+        over ? 'ring-1 ring-rose-400' : '',
+      )}
+    >
+      <div className="flex flex-col gap-3 border-b border-white/70 bg-gradient-to-r from-amber-50/80 to-transparent px-3 py-3 sm:flex-row sm:items-center sm:px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <ProductThumb src={product.imageUrl} name={product.name} className="h-12 w-12 shrink-0 rounded-2xl sm:h-14 sm:w-14" />
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-base font-semibold text-ink">{product.name}</h2>
+            <p className="text-xs text-stone-500">
+              {product.sku ? `${product.sku} · ` : ''}
+              {t('remainOpening')} {formatQty(opening)}
+            </p>
+          </div>
+        </div>
+        <span className="flex flex-wrap items-center gap-2">
+          <span className={cn('rounded-full px-3 py-1 text-xs font-semibold', profit < 0 ? 'bg-rose-100 text-rose-900' : 'bg-emerald-100 text-emerald-900')}>{app.money(profit)}</span>
+          {onSkip ? (
+            <Button type="button" size="sm" variant="danger" onClick={onSkip}>
+              {t('deleteRecord')}
+            </Button>
+          ) : null}
+        </span>
+      </div>
+      <div className={cn('grid gap-3 p-3 sm:p-4', compact ? 'grid-cols-2 lg:grid-cols-3' : 'grid-cols-2 lg:grid-cols-5')}>
+        <label className="col-span-2 sm:col-span-1">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-stone-500">{t('remainLeft')}</span>
+          <NumberInput
+            id={`cogs-remain-${product.id}`}
+            allowDecimal
+            value={remaining ?? opening}
+            onValueChange={onRemaining}
+            className="rounded-2xl border-amber-200/80 bg-white text-lg font-semibold"
+          />
+          <span className="mt-1 block text-[11px] leading-4 text-stone-500">{t('remainHalfHint')}</span>
+        </label>
+        <label className="col-span-2 sm:col-span-1">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-stone-500">{t('remainBuyPrice')}</span>
+          <NumberInput
+            value={cost ?? product.costPrice}
+            onValueChange={onCost}
+            className="rounded-2xl border-amber-200/80 bg-white text-lg font-semibold"
+          />
+          <span className="mt-1 block text-[11px] leading-4 text-stone-500">{t('remainBuyHint')}</span>
+        </label>
+        <div className="rounded-2xl bg-stone-950 px-3 py-3 text-white">
+          <p className="text-[11px] uppercase tracking-wide text-stone-400">{t('remainSold')}</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums">{formatQty(sold)}</p>
+        </div>
+        {!compact && (
+          <>
+            <div className="rounded-2xl bg-amber-50 px-3 py-3">
+              <p className="text-[11px] uppercase tracking-wide text-amber-800">{t('remainRevenue')}</p>
+              <p className="mt-1 break-words text-sm font-semibold tabular-nums text-ink">{app.money(revenue)}</p>
+            </div>
+            <div className={cn('rounded-2xl px-3 py-3', profit < 0 ? 'bg-rose-50' : 'bg-emerald-50')}>
+              <p className={cn('text-[11px] uppercase tracking-wide', profit < 0 ? 'text-rose-800' : 'text-emerald-800')}>{t('remainResult')}</p>
+              <p className="mt-1 break-words text-sm font-semibold tabular-nums text-ink">{app.money(profit)}</p>
+            </div>
+          </>
+        )}
+      </div>
+    </article>
+  )
 }
 
 type Step = 'count' | 'expenses' | 'debts' | 'mobile' | 'sheet'
@@ -53,6 +161,9 @@ export function RemainingStockPage() {
   const [remaining, setRemaining] = useState<Record<string, number | null>>({})
   const [costs, setCosts] = useState<Record<string, number | null>>({})
   const [skipped, setSkipped] = useState<string[]>([])
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState<number | null>(null)
@@ -99,6 +210,23 @@ export function RemainingStockPage() {
   const profit = filled.reduce((sum, row) => sum + row.profit, 0)
   const revenue = filled.reduce((sum, row) => sum + row.revenue, 0)
   const blocked = filled.some((row) => row.over)
+  const needle = search.trim().toLowerCase()
+  const searchHits = useMemo(
+    () => (needle ? rows.filter((row) => productMatches(row.product, needle)).slice(0, 12) : []),
+    [rows, needle],
+  )
+  const listed = needle ? filled.filter((row) => productMatches(row.product, needle)) : filled
+
+  useEffect(() => {
+    if (!searchOpen) return
+    searchInputRef.current?.focus()
+  }, [searchOpen])
+
+  const writeRemaining = (productId: string, value: number | null) => {
+    setSkipped((current) => current.filter((id) => id !== productId))
+    setRemaining((current) => ({ ...current, [productId]: value }))
+  }
+
   const countedRows: SalesDayRow[] = filled.map((row) => ({
     name: row.product.name,
     remaining: row.left,
@@ -175,59 +303,86 @@ export function RemainingStockPage() {
                   setStep('expenses')
                 }}
               >
-                {!filled.length && <p className="rounded-3xl border border-dashed border-stone-300 bg-white/60 px-4 py-8 text-center text-sm text-stone-500">{t('remainNoneInStock')}</p>}
-                <div className="grid gap-3">
-                  {filled.map((row) => (
-                    <article key={row.product.id} className="glass-panel reveal-card overflow-hidden rounded-[1.75rem]">
-                      <div className="flex flex-col gap-3 border-b border-white/70 bg-gradient-to-r from-amber-50/80 to-transparent px-3 py-3 sm:flex-row sm:items-center sm:px-4">
-                        <div className="flex min-w-0 flex-1 items-center gap-3">
-                          <ProductThumb src={row.product.imageUrl} name={row.product.name} className="h-12 w-12 shrink-0 rounded-2xl sm:h-14 sm:w-14" />
-                          <div className="min-w-0 flex-1">
-                            <h2 className="truncate text-base font-semibold text-ink">{row.product.name}</h2>
-                            <p className="text-xs text-stone-500">{t('remainOpening')} {formatQty(row.opening)}</p>
-                          </div>
-                        </div>
-                        <span className="flex flex-wrap items-center gap-2">
-                          <span className={cn('rounded-full px-3 py-1 text-xs font-semibold', row.profit < 0 ? 'bg-rose-100 text-rose-900' : 'bg-emerald-100 text-emerald-900')}>{app.money(row.profit)}</span>
-                          <Button type="button" size="sm" variant="danger" onClick={() => setSkipped((current) => [...current, row.product.id])}>{t('deleteRecord')}</Button>
-                        </span>
+                <div className="sticky top-2 z-20 space-y-3">
+                  {!searchOpen ? (
+                    <Button
+                      type="button"
+                      variant="gold"
+                      className="w-full rounded-2xl sm:w-auto"
+                      onClick={() => setSearchOpen(true)}
+                    >
+                      <Search className="h-4 w-4" aria-hidden="true" />
+                      {t('remainSearch')}
+                    </Button>
+                  ) : (
+                    <div className="glass-panel review-sheet space-y-3 rounded-[1.75rem] p-3 sm:p-4" role="search">
+                      <div className="flex items-center gap-2">
+                        <Search className="h-5 w-5 shrink-0 text-amber-800" aria-hidden="true" />
+                        <input
+                          ref={searchInputRef}
+                          value={search}
+                          onChange={(event) => setSearch(event.target.value)}
+                          placeholder={t('pickerPlaceholder')}
+                          aria-label={t('remainSearch')}
+                          className="min-w-0 flex-1 bg-transparent text-base font-semibold text-ink outline-none placeholder:font-normal placeholder:text-stone-400"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-label={t('close')}
+                          onClick={() => {
+                            setSearchOpen(false)
+                            setSearch('')
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <div className="grid grid-cols-2 gap-3 p-3 sm:p-4 lg:grid-cols-5">
-                        <label className="col-span-2 sm:col-span-1">
-                          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-stone-500">{t('remainLeft')}</span>
-                          <NumberInput
-                            allowDecimal
-                            value={remaining[row.product.id] ?? row.opening}
-                            onValueChange={(next) => setRemaining((current) => ({ ...current, [row.product.id]: next }))}
-                            className="rounded-2xl border-amber-200/80 bg-white text-lg font-semibold"
-                          />
-                          <span className="mt-1 block text-[11px] leading-4 text-stone-500">{t('remainHalfHint')}</span>
-                        </label>
-                        <label className="col-span-2 sm:col-span-1">
-                          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-stone-500">{t('remainBuyPrice')}</span>
-                          <NumberInput
-                            value={costs[row.product.id] ?? row.product.costPrice}
-                            onValueChange={(next) => setCosts((current) => ({ ...current, [row.product.id]: next }))}
-                            className="rounded-2xl border-amber-200/80 bg-white text-lg font-semibold"
-                          />
-                          <span className="mt-1 block text-[11px] leading-4 text-stone-500">{t('remainBuyHint')}</span>
-                        </label>
-                        <div className="rounded-2xl bg-stone-950 px-3 py-3 text-white">
-                          <p className="text-[11px] uppercase tracking-wide text-stone-400">{t('remainSold')}</p>
-                          <p className="mt-1 text-xl font-semibold tabular-nums">{formatQty(row.sold)}</p>
+                      <p className="text-xs leading-5 text-stone-600">{t('remainSearchHint')}</p>
+                      {!needle && <p className="text-sm text-stone-500">{t('remainSearchEmpty')}</p>}
+                      {needle && (
+                        <div className="grid max-h-[min(28rem,55dvh)] gap-3 overflow-y-auto pr-0.5">
+                          {searchHits.map((row) => (
+                            <CountProductCard
+                              key={row.product.id}
+                              product={row.product}
+                              opening={row.opening}
+                              remaining={remaining[row.product.id] ?? null}
+                              cost={costs[row.product.id] ?? null}
+                              compact
+                              onRemaining={(next) => writeRemaining(row.product.id, next)}
+                              onCost={(next) => setCosts((current) => ({ ...current, [row.product.id]: next }))}
+                            />
+                          ))}
+                          {!searchHits.length && <p className="text-sm text-stone-500">{t('pickerEmpty')}</p>}
                         </div>
-                        <div className="rounded-2xl bg-amber-50 px-3 py-3">
-                          <p className="text-[11px] uppercase tracking-wide text-amber-800">{t('remainRevenue')}</p>
-                          <p className="mt-1 break-words text-sm font-semibold tabular-nums text-ink">{app.money(row.revenue)}</p>
-                        </div>
-                        <div className={cn('rounded-2xl px-3 py-3', row.profit < 0 ? 'bg-rose-50' : 'bg-emerald-50')}>
-                          <p className={cn('text-[11px] uppercase tracking-wide', row.profit < 0 ? 'text-rose-800' : 'text-emerald-800')}>{t('remainResult')}</p>
-                          <p className="mt-1 break-words text-sm font-semibold tabular-nums text-ink">{app.money(row.profit)}</p>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
+                      )}
+                      {needle && (
+                        <Button type="button" size="sm" variant="secondary" onClick={() => setSearch('')}>
+                          {t('remainSearchClear')}
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
+                {!filled.length && <p className="rounded-3xl border border-dashed border-stone-300 bg-white/60 px-4 py-8 text-center text-sm text-stone-500">{t('remainNoneInStock')}</p>}
+                {!(searchOpen && needle) && (
+                  <div className="grid gap-3">
+                    {listed.map((row) => (
+                      <CountProductCard
+                        key={row.product.id}
+                        product={row.product}
+                        opening={row.opening}
+                        remaining={remaining[row.product.id] ?? null}
+                        cost={costs[row.product.id] ?? null}
+                        onRemaining={(next) => writeRemaining(row.product.id, next)}
+                        onCost={(next) => setCosts((current) => ({ ...current, [row.product.id]: next }))}
+                        onSkip={() => setSkipped((current) => [...current, row.product.id])}
+                      />
+                    ))}
+                  </div>
+                )}
                 {blocked && <p className="text-sm text-rose-700">{t('remainOver')}</p>}
                 <Button type="submit" variant="gold" className="w-full sm:w-auto" disabled={blocked || !filled.length}>{t('cogsNext')}</Button>
               </form>

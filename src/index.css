@@ -67,6 +67,14 @@
   animation: profit-grow 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.dash-chart .recharts-cartesian-grid-horizontal line {
+  stroke: rgba(28, 25, 23, 0.08);
+}
+
+.dash-chart .recharts-legend-item-text {
+  color: #44403c !important;
+}
+
 @keyframes profit-grow {
   from {
     transform: scaleX(0);

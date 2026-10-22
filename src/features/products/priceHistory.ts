@@ -30,6 +30,15 @@ export function latestPriceChange(changes: ProductPriceChange[], productId: stri
     .at(-1)
 }
 
+export function pricesOnDay(product: Product, changes: ProductPriceChange[] | undefined, day: string) {
+  const applicable = (changes ?? [])
+    .filter((item) => item.productId === product.id && item.effectiveDate <= day)
+    .sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate) || a.createdAt.localeCompare(b.createdAt))
+  const hit = applicable.at(-1)
+  if (hit) return { costPrice: hit.costPrice, sellingPrice: hit.sellingPrice, dated: true as const }
+  return { costPrice: product.costPrice, sellingPrice: product.sellingPrice, dated: false as const }
+}
+
 export function repriceDayCloses<T extends { day: string; lines: CogsLine[] }>(
   dayCloses: T[],
   product: Product,

@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
 import { ClipboardCheck, ClipboardList, PackagePlus, Receipt, ScrollText, ShoppingCart, Wallet } from 'lucide-react'
 import { ProductThumb } from '@/components/ProductPicker'
 import { StockBadge } from '@/components/ui/Feedback'
+import { datedItemMoney, saleBusinessDay } from '@/features/reports/metrics'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { StockLevel } from '@/types'
-import { asDateKey } from '@/utils/dates'
-import { billBalance, recordedTotal } from '@/utils/labels'
+import { asDateKey, formatDayLabel, recentDateKeys } from '@/utils/dates'
+import { billBalance, stockInUnits } from '@/utils/labels'
 import { cn } from '@/utils/cn'
 
 function Reveal({ children, className, delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
@@ -42,7 +44,7 @@ function Reveal({ children, className, delay = 0 }: { children: ReactNode; class
 const glass = 'relative overflow-hidden border border-white/80 bg-white/55 shadow-[0_10px_30px_rgba(28,25,23,0.06)] backdrop-blur-xl'
 
 export function DashboardPage() {
-  const { user, sales, stockIns, activities, expenses, products, snapshots, money } = useApp()
+  const { user, sales, stockIns, activities, expenses, products, snapshots, money, priceChanges, dayCloses } = useApp()
   const { t } = useI18n()
   const [filter, setFilter] = useState<'all' | StockLevel>('all')
   const [openId, setOpenId] = useState<string | null>(null)
@@ -53,7 +55,23 @@ export function DashboardPage() {
   const myActivities = mine(activities)
   const myExpenses = mine(expenses)
   const today = asDateKey(new Date().toISOString())
-  const approvedToday = mySales.filter((sale) => sale.status === 'approved' && asDateKey(sale.reviewedAt ?? '') === today)
+  const pricing = { products, priceChanges, dayCloses }
+  const approvedToday = mySales.filter((sale) => sale.status === 'approved' && saleBusinessDay(pricing, sale) === today)
+  const weekMine = useMemo(
+    () =>
+      recentDateKeys(7).map((key) => ({
+        key,
+        label: formatDayLabel(key),
+        sales: mySales
+          .filter((sale) => sale.status === 'approved' && saleBusinessDay({ dayCloses }, sale) === key)
+          .reduce((sum, sale) => {
+            if (typeof sale.settledAmount === 'number') return sum + sale.settledAmount
+            return sum + sale.items.reduce((line, item) => line + datedItemMoney({ products, priceChanges }, item, key).revenue, 0)
+          }, 0),
+        stock: myStock.filter((entry) => entry.status === 'approved' && entry.deliveryDate === key).reduce((sum, entry) => sum + stockInUnits(entry.items), 0),
+      })),
+    [mySales, myStock, dayCloses, products, priceChanges],
+  )
   const pending = [...mySales, ...myStock, ...myActivities, ...myExpenses].filter((item) => item.status === 'pending').length
   const rejected = [...mySales, ...myStock, ...myActivities, ...myExpenses].filter((item) => item.status === 'rejected').length
   const stock = products
@@ -89,7 +107,10 @@ export function DashboardPage() {
           <section className={cn(glass, 'grid grid-cols-2 divide-line rounded-3xl sm:grid-cols-4 sm:divide-x')}>
             {[
               { label: t('dashPendingMine'), value: String(pending), tone: pending ? 'text-amber-800' : 'text-ink' },
-              { label: t('dashSalesMine'), value: money(approvedToday.reduce((sum, sale) => sum + recordedTotal(sale), 0)), tone: 'text-ink' },
+              { label: t('dashSalesMine'), value: money(approvedToday.reduce((sum, sale) => {
+                if (typeof sale.settledAmount === 'number') return sum + sale.settledAmount
+                return sum + sale.items.reduce((line, item) => line + datedItemMoney(pricing, item, today).revenue, 0)
+              }, 0)), tone: 'text-ink' },
               { label: t('dashRejectedMine'), value: String(rejected), tone: rejected ? 'text-rose-800' : 'text-ink' },
               { label: t('dashStockCount'), value: String(stock.length), tone: 'text-ink' },
             ].map((item) => (
@@ -98,6 +119,22 @@ export function DashboardPage() {
                 <p className={cn('mt-1 break-words text-xl font-semibold tabular-nums tracking-tight sm:text-2xl', item.tone)}>{item.value}</p>
               </div>
             ))}
+          </section>
+        </Reveal>
+
+        <Reveal delay={60}>
+          <section className={cn(glass, 'rounded-3xl p-4 sm:p-5')}>
+            <h2 className="font-semibold text-ink">{t('dashWeekMine')}</h2>
+            <div className="mt-3 h-40 sm:h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={weekMine}>
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(value: number, name: string) => [name === 'sales' ? money(Number(value)) : value, name === 'sales' ? t('statementSales') : t('dashChartStockIn')]} />
+                  <Bar dataKey="sales" fill="#b45309" radius={[8, 8, 0, 0]} maxBarSize={26} />
+                  <Bar dataKey="stock" fill="#1c1917" radius={[8, 8, 0, 0]} maxBarSize={26} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </section>
         </Reveal>
 

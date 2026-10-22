@@ -1,9 +1,11 @@
 import { allSnapshots, snapshotFor } from '@/features/inventory/stock'
-import type { Database, StockSnapshot } from '@/types'
+import { pricesOnDay } from '@/features/products/priceHistory'
+import type { Database, SalesItem, SalesTransaction, StockSnapshot } from '@/types'
 import {
   asDateKey,
   eachDateKey,
   formatDayLabel,
+  formatDayShort,
   inDateRange,
   monthKeyFromValue,
   monthLabel,
@@ -11,7 +13,31 @@ import {
   recentMonthKeys,
   weekStartKey,
 } from '@/utils/dates'
-import { saleCost, saleTotal, recordedTotal, stockInTotal, stockInUnits } from '@/utils/labels'
+import { saleTotal, stockInTotal, stockInUnits } from '@/utils/labels'
+
+export interface DashProductPoint {
+  id: string
+  name: string
+  imageUrl?: string
+  units: number
+  revenue: number
+  profit: number
+}
+
+export interface DashDayPoint {
+  key: string
+  label: string
+  shortLabel: string
+  sales: number
+  profit: number
+  stockInUnits: number
+  stockInCost: number
+  soldUnits: number
+  expenses: number
+  pool: number
+  korokoro: number
+  products: DashProductPoint[]
+}
 
 export interface DashboardData {
   activeProducts: number
@@ -31,6 +57,7 @@ export interface DashboardData {
   todayTotalRevenue: number
   last7Days: Array<{ key: string; label: string; revenue: number; units: number }>
   last6Months: Array<{ key: string; label: string; revenue: number }>
+  last30Days: DashDayPoint[]
   bestSellers: Array<{ name: string; imageUrl?: string; units: number; revenue: number }>
   movementTrend: Array<{ key: string; label: string; received: number; sold: number }>
   breakdown: Array<{ name: string; value: number }>
@@ -42,10 +69,109 @@ function approvedSales(db: Database) {
   return db.sales.filter((sale) => sale.status === 'approved' && sale.reviewedAt && !sale.isLoss && !(sale.recordKind === 'bill' && sale.paymentStatus !== 'paid'))
 }
 
+export function saleBusinessDay(db: Pick<Database, 'dayCloses'>, sale: SalesTransaction) {
+  const close = (db.dayCloses ?? []).find((item) => item.remainingSaleId === sale.id)
+  if (close?.day) return close.day
+  return asDateKey(sale.generatedAt || sale.reviewedAt || sale.submittedAt)
+}
+
+export function datedItemMoney(db: Pick<Database, 'products' | 'priceChanges'>, item: SalesItem, day: string) {
+  const product = db.products.find((entry) => entry.id === item.productId)
+  if (!product) {
+    return { revenue: item.quantity * item.unitPrice, cost: item.quantity * item.unitCost, name: 'Product', imageUrl: undefined as string | undefined }
+  }
+  const priced = pricesOnDay(product, db.priceChanges, day)
+  const selling = priced.dated ? priced.sellingPrice : item.unitPrice
+  const cost = priced.dated ? priced.costPrice : item.unitCost
+  return { revenue: item.quantity * selling, cost: item.quantity * cost, name: product.name, imageUrl: product.imageUrl }
+}
+
+function addProduct(map: Map<string, DashProductPoint>, item: SalesItem, day: string, db: Database) {
+  const money = datedItemMoney(db, item, day)
+  const current = map.get(item.productId) ?? {
+    id: item.productId,
+    name: money.name,
+    imageUrl: money.imageUrl,
+    units: 0,
+    revenue: 0,
+    profit: 0,
+  }
+  current.units += item.quantity
+  current.revenue += money.revenue
+  current.profit += money.revenue - money.cost
+  map.set(item.productId, current)
+}
+
+function remainingSaleIdsOn(db: Pick<Database, 'dayCloses'>, day: string) {
+  return new Set(
+    (db.dayCloses ?? [])
+      .filter((item) => item.day === day && item.remainingSaleId && (item.lines?.length ?? 0) > 0)
+      .map((item) => item.remainingSaleId as string),
+  )
+}
+
+function dayTotals(db: Database, day: string): Omit<DashDayPoint, 'key' | 'label' | 'shortLabel'> {
+  const products = new Map<string, DashProductPoint>()
+  let sales = 0
+  let goodsCost = 0
+  let soldUnits = 0
+  const remainingIds = remainingSaleIdsOn(db, day)
+
+  for (const close of db.dayCloses ?? []) {
+    if (close.day !== day || !close.lines?.length) continue
+    for (const line of close.lines) {
+      const id = line.productId || line.name
+      const current = products.get(id) ?? { id, name: line.name, units: 0, revenue: 0, profit: 0 }
+      current.units += line.sold
+      current.revenue += line.amount
+      current.profit += line.profit
+      products.set(id, current)
+      sales += line.amount
+      goodsCost += line.amount - line.profit
+      soldUnits += line.sold
+    }
+  }
+
+  for (const sale of approvedSales(db)) {
+    if (remainingIds.has(sale.id)) continue
+    if (saleBusinessDay(db, sale) !== day) continue
+    if (typeof sale.settledAmount === 'number') {
+      sales += sale.settledAmount
+      continue
+    }
+    for (const item of sale.items) {
+      const money = datedItemMoney(db, item, day)
+      sales += money.revenue
+      goodsCost += money.cost
+      soldUnits += item.quantity
+      addProduct(products, item, day, db)
+    }
+  }
+
+  const received = db.stockIns.filter((entry) => entry.status === 'approved' && entry.deliveryDate === day)
+  const stockInUnitsTotal = received.reduce((sum, entry) => sum + stockInUnits(entry.items), 0)
+  const stockInCost = received.reduce((sum, entry) => sum + stockInTotal(entry.items), 0)
+  const expenses = db.expenses
+    .filter((item) => item.status === 'approved' && item.spentOn === day)
+    .reduce((sum, item) => sum + item.amount, 0)
+  const pool = activityOn(db, day, 'pool_table')
+  const korokoro = activityOn(db, day, 'korokoro')
+  const profit = sales - goodsCost + pool + korokoro - expenses
+  return {
+    sales,
+    profit,
+    stockInUnits: stockInUnitsTotal,
+    stockInCost,
+    soldUnits,
+    expenses,
+    pool,
+    korokoro,
+    products: [...products.values()].sort((a, b) => b.revenue - a.revenue),
+  }
+}
+
 function revenueOn(db: Database, key: string) {
-  return approvedSales(db)
-    .filter((sale) => asDateKey(sale.reviewedAt ?? '') === key)
-    .reduce((sum, sale) => sum + recordedTotal(sale), 0)
+  return dayTotals(db, key).sales
 }
 
 function activityOn(db: Database, key: string, code?: 'pool_table' | 'korokoro') {
@@ -64,7 +190,8 @@ export function buildDashboard(db: Database, now = new Date()): DashboardData {
   const active = db.products.filter((product) => product.isActive)
   const today = asDateKey(now.toISOString())
   const yesterday = recentDateKeys(2, now)[0]
-  const days = recentDateKeys(7, now)
+  const days30 = recentDateKeys(30, now)
+  const days = days30.slice(-7)
   const months = recentMonthKeys(6, now)
   const todaySalesRevenue = revenueOn(db, today)
   const todayPool = activityOn(db, today, 'pool_table')
@@ -73,47 +200,57 @@ export function buildDashboard(db: Database, now = new Date()): DashboardData {
     (entry) => entry.status === 'approved' && entry.deliveryDate === today,
   )
 
+  const last30Days: DashDayPoint[] = days30.map((key) => {
+    const totals = dayTotals(db, key)
+    return {
+      key,
+      label: formatDayLabel(key),
+      shortLabel: formatDayShort(key),
+      ...totals,
+    }
+  })
   const sellerMap = new Map<string, { name: string; units: number; revenue: number; imageUrl?: string }>()
-  const since = recentDateKeys(30, now)[0]
-  for (const sale of approvedSales(db)) {
-    if (asDateKey(sale.reviewedAt ?? '') < since) continue
-    for (const item of sale.items) {
-      const product = db.products.find((entry) => entry.id === item.productId)
-      const current = sellerMap.get(item.productId) ?? {
-        name: product?.name ?? 'Product',
-        imageUrl: product?.imageUrl,
+  for (const day of last30Days) {
+    for (const product of day.products) {
+      const current = sellerMap.get(product.id) ?? {
+        name: product.name,
+        imageUrl: product.imageUrl,
         units: 0,
         revenue: 0,
       }
-      current.units += item.quantity
-      current.revenue += item.quantity * item.unitPrice
-      sellerMap.set(item.productId, current)
+      current.units += product.units
+      current.revenue += product.revenue
+      sellerMap.set(product.id, current)
     }
   }
 
   const monthTotals = new Map<string, number>(months.map((key) => [key, 0]))
   for (const sale of approvedSales(db)) {
-    const key = monthKeyFromValue(sale.reviewedAt ?? '')
-    if (monthTotals.has(key)) monthTotals.set(key, (monthTotals.get(key) ?? 0) + recordedTotal(sale))
+    const day = saleBusinessDay(db, sale)
+    const key = monthKeyFromValue(day)
+    if (!monthTotals.has(key)) continue
+    if (typeof sale.settledAmount === 'number') {
+      monthTotals.set(key, (monthTotals.get(key) ?? 0) + sale.settledAmount)
+      continue
+    }
+    const remaining = remainingSaleIdsOn(db, day)
+    if (remaining.has(sale.id)) continue
+    const money = sale.items.reduce((sum, item) => sum + datedItemMoney(db, item, day).revenue, 0)
+    monthTotals.set(key, (monthTotals.get(key) ?? 0) + money)
+  }
+  for (const close of db.dayCloses ?? []) {
+    const key = monthKeyFromValue(close.day)
+    if (!monthTotals.has(key) || !close.lines?.length) continue
+    monthTotals.set(key, (monthTotals.get(key) ?? 0) + close.lines.reduce((sum, line) => sum + line.amount, 0))
   }
   for (const activity of db.activities.filter((entry) => entry.status === 'approved')) {
     const key = monthKeyFromValue(activity.occurredAt)
     if (monthTotals.has(key)) monthTotals.set(key, (monthTotals.get(key) ?? 0) + activity.amount)
   }
 
-  const thirtyStart = since
-  let beverage = 0
-  let pool = 0
-  let korokoro = 0
-  for (const sale of approvedSales(db)) {
-    if (asDateKey(sale.reviewedAt ?? '') >= thirtyStart) beverage += recordedTotal(sale)
-  }
-  for (const activity of db.activities.filter((entry) => entry.status === 'approved')) {
-    if (asDateKey(activity.occurredAt) < thirtyStart) continue
-    const code = db.activityTypes.find((type) => type.id === activity.activityTypeId)?.code
-    if (code === 'pool_table') pool += activity.amount
-    if (code === 'korokoro') korokoro += activity.amount
-  }
+  const beverage = last30Days.reduce((sum, day) => sum + day.sales, 0)
+  const pool = last30Days.reduce((sum, day) => sum + day.pool, 0)
+  const korokoro = last30Days.reduce((sum, day) => sum + day.korokoro, 0)
 
   return {
     activeProducts: active.length,
@@ -131,26 +268,17 @@ export function buildDashboard(db: Database, now = new Date()): DashboardData {
     todayPool,
     todayKorokoro,
     todayTotalRevenue: todaySalesRevenue + todayPool + todayKorokoro,
-    last7Days: days.map((key) => ({
-      key,
-      label: formatDayLabel(key),
-      revenue: revenueOn(db, key),
-      units: approvedSales(db)
-        .filter((sale) => asDateKey(sale.reviewedAt ?? '') === key)
-        .reduce((sum, sale) => sum + sale.items.reduce((line, item) => line + item.quantity, 0), 0),
-    })),
+    last7Days: days.map((key) => {
+      const point = last30Days.find((item) => item.key === key)
+      return { key, label: formatDayLabel(key), revenue: point?.sales ?? 0, units: point?.soldUnits ?? 0 }
+    }),
     last6Months: months.map((key) => ({ key, label: monthLabel(key), revenue: monthTotals.get(key) ?? 0 })),
+    last30Days,
     bestSellers: [...sellerMap.values()].sort((a, b) => b.units - a.units).slice(0, 5),
-    movementTrend: days.map((key) => ({
-      key,
-      label: formatDayLabel(key),
-      received: db.stockIns
-        .filter((entry) => entry.status === 'approved' && asDateKey(entry.reviewedAt ?? '') === key)
-        .reduce((sum, entry) => sum + stockInUnits(entry.items), 0),
-      sold: db.movements
-        .filter((movement) => movement.type === 'sale' && asDateKey(movement.createdAt) === key)
-        .reduce((sum, movement) => sum + (movement.quantity < 0 ? -movement.quantity : 0), 0),
-    })),
+    movementTrend: days.map((key) => {
+      const point = last30Days.find((item) => item.key === key)
+      return { key, label: formatDayLabel(key), received: point?.stockInUnits ?? 0, sold: point?.soldUnits ?? 0 }
+    }),
     breakdown: [
       { name: 'Beverage sales', value: beverage },
       { name: 'Pool table', value: pool },
@@ -257,7 +385,7 @@ export function buildReport(db: Database, filters: ReportFilters): ReportData {
     .sort((a, b) => a.name.localeCompare(b.name))
 
   const approved = db.sales.filter(
-    (sale) => sale.status === 'approved' && sale.reviewedAt && inDateRange(sale.reviewedAt, filters.from, filters.to),
+    (sale) => sale.status === 'approved' && sale.reviewedAt && inDateRange(saleBusinessDay(db, sale), filters.from, filters.to),
   )
 
   const productMap = new Map<string, ReportData['salesByProduct'][number]>()
@@ -270,11 +398,41 @@ export function buildReport(db: Database, filters: ReportFilters): ReportData {
 
   for (const key of eachDateKey(filters.from, filters.to)) dayMap.set(key, { revenue: 0, units: 0 })
 
+  for (const close of db.dayCloses ?? []) {
+    if (!inDateRange(close.day, filters.from, filters.to) || !close.lines?.length) continue
+    const day = close.day
+    const bucket = dayMap.get(day) ?? { revenue: 0, units: 0 }
+    for (const line of close.lines) {
+      const product = db.products.find((entry) => entry.id === line.productId || entry.name === line.name)
+      if (product && !matchesCategory(db, product.id, filters.categoryId)) continue
+      beverageRevenue += line.amount
+      cogs += line.amount - line.profit
+      bucket.revenue += line.amount
+      bucket.units += line.sold
+      const current = productMap.get(product?.id ?? line.name) ?? {
+        name: line.name,
+        imageUrl: product?.imageUrl,
+        category: categoryName(db, product?.categoryId ?? ''),
+        units: 0,
+        revenue: 0,
+        cost: 0,
+        profit: 0,
+      }
+      current.units += line.sold
+      current.revenue += line.amount
+      current.cost += line.amount - line.profit
+      current.profit = current.revenue - current.cost
+      productMap.set(product?.id ?? line.name, current)
+    }
+    dayMap.set(day, bucket)
+  }
+
   for (const sale of approved) {
+    const day = saleBusinessDay(db, sale)
+    if (remainingSaleIdsOn(db, day).has(sale.id)) continue
     if (typeof sale.settledAmount === 'number') {
       if (filters.categoryId !== 'all') continue
       beverageRevenue += sale.settledAmount
-      const day = asDateKey(sale.reviewedAt ?? '')
       const bucket = dayMap.get(day) ?? { revenue: 0, units: 0 }
       bucket.revenue += sale.settledAmount
       dayMap.set(day, bucket)
@@ -290,12 +448,12 @@ export function buildReport(db: Database, filters: ReportFilters): ReportData {
     }
     const included = sale.items.filter((item) => matchesCategory(db, item.productId, filters.categoryId))
     if (!included.length) continue
-    const revenue = saleTotal(included)
-    const cost = saleCost(included)
+    const priced = included.map((item) => ({ item, money: datedItemMoney(db, item, day) }))
+    const revenue = priced.reduce((sum, row) => sum + row.money.revenue, 0)
+    const cost = priced.reduce((sum, row) => sum + row.money.cost, 0)
     beverageRevenue += revenue
     cogs += cost
     if (included.some((item) => item.unitCost <= 0)) costIncomplete = true
-    const day = asDateKey(sale.reviewedAt ?? '')
     const bucket = dayMap.get(day) ?? { revenue: 0, units: 0 }
     bucket.revenue += revenue
     bucket.units += included.reduce((sum, item) => sum + item.quantity, 0)
@@ -321,16 +479,17 @@ export function buildReport(db: Database, filters: ReportFilters): ReportData {
         cost: 0,
         profit: 0,
       }
+      const money = datedItemMoney(db, item, day)
       current.units += item.quantity
-      current.revenue += item.quantity * item.unitPrice
-      current.cost += item.quantity * item.unitCost
+      current.revenue += money.revenue
+      current.cost += money.cost
       current.profit = current.revenue - current.cost
       productMap.set(item.productId, current)
 
       const catName = categoryName(db, product?.categoryId ?? '')
       const cat = categoryMap.get(catName) ?? { name: catName, units: 0, revenue: 0 }
       cat.units += item.quantity
-      cat.revenue += item.quantity * item.unitPrice
+      cat.revenue += money.revenue
       categoryMap.set(catName, cat)
     }
   }
@@ -481,8 +640,23 @@ export function buildDayStatement(db: Database, day: string): DayStatement {
   const soldMap = new Map<string, { name: string; units: number; revenue: number; cost: number; profit: number }>()
   let salesRevenue = 0
   let goodsCost = 0
+  const remainingIds = remainingSaleIdsOn(db, day)
+  for (const close of db.dayCloses ?? []) {
+    if (close.day !== day || !close.lines?.length) continue
+    for (const line of close.lines) {
+      const id = line.productId || line.name
+      const current = soldMap.get(id) ?? { name: line.name, units: 0, revenue: 0, cost: 0, profit: 0 }
+      current.units += line.sold
+      current.revenue += line.amount
+      current.cost += line.amount - line.profit
+      current.profit = current.revenue - current.cost
+      soldMap.set(id, current)
+      salesRevenue += line.amount
+      goodsCost += line.amount - line.profit
+    }
+  }
   for (const sale of approvedSales(db)) {
-    if (asDateKey(sale.reviewedAt ?? sale.submittedAt) !== day) continue
+    if (saleBusinessDay(db, sale) !== day || remainingIds.has(sale.id)) continue
     if (typeof sale.settledAmount === 'number') {
       salesRevenue += sale.settledAmount
       const label = sale.customerName ? `Bill payment · ${sale.customerName}` : 'Bill payment'
@@ -493,16 +667,15 @@ export function buildDayStatement(db: Database, day: string): DayStatement {
       continue
     }
     for (const item of sale.items) {
-      const product = db.products.find((entry) => entry.id === item.productId)
-      const name = product?.name ?? 'Product'
-      const current = soldMap.get(item.productId) ?? { name, units: 0, revenue: 0, cost: 0, profit: 0 }
+      const money = datedItemMoney(db, item, day)
+      const current = soldMap.get(item.productId) ?? { name: money.name, units: 0, revenue: 0, cost: 0, profit: 0 }
       current.units += item.quantity
-      current.revenue += item.quantity * item.unitPrice
-      current.cost += item.quantity * item.unitCost
+      current.revenue += money.revenue
+      current.cost += money.cost
       current.profit = current.revenue - current.cost
       soldMap.set(item.productId, current)
-      salesRevenue += item.quantity * item.unitPrice
-      goodsCost += item.quantity * item.unitCost
+      salesRevenue += money.revenue
+      goodsCost += money.cost
     }
   }
 

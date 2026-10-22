@@ -151,6 +151,11 @@ export function formatDayLabel(key: string) {
   )
 }
 
+export function formatDayShort(key: string) {
+  const [, , day] = key.split('-')
+  return String(Number(day))
+}
+
 export function rangeForPreset(preset: 'today' | '7d' | '30d' | 'month' | 'year') {
   const today = dateKey()
   const now = new Date()

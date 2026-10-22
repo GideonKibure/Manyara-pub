@@ -1,6 +1,7 @@
 import { snapshotFor } from '@/features/inventory/stock'
 import { overdueUnpaidBill, unpaidBillHeld } from '@/features/sales/holds'
 import { portionPrice, sizeCost } from '@/features/products/offer'
+import { latestPriceChange, nextPriceChangeDate, repriceDayCloses } from '@/features/products/priceHistory'
 import { syncStockAlerts } from '@/features/notifications/alerts'
 import { saleTotal } from '@/utils/labels'
 import {
@@ -31,6 +32,7 @@ import type {
   ExpenseTransaction,
   InventoryMovement,
   ProductDraft,
+  ProductPriceChange,
   Profile,
   RecordDeleteKind,
   SaleDraft,
@@ -343,6 +345,53 @@ export function updateProduct(db: Database, userId: string, productId: string, i
   return finish(audit({ ...db, products }, userId, 'product.update', 'product', productId, `Updated product ${parsed.data.name}.`), 'Product updated.')
 }
 
+export function applyPriceChange(
+  db: Database,
+  userId: string,
+  input: { productId: string; day: string; costPrice: number; sellingPrice: number },
+): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const product = db.products.find((item) => item.id === input.productId)
+  if (!product) return fail('Product not found.')
+  const day = input.day.slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return fail('Choose a valid price-change date.')
+  if (day > dateKey()) return fail('The price-change date cannot be in the future.')
+  const costPrice = Math.round(input.costPrice)
+  const sellingPrice = Math.round(input.sellingPrice)
+  if (!Number.isFinite(costPrice) || costPrice < 0 || !Number.isFinite(sellingPrice) || sellingPrice < 0) {
+    return fail('Buying and selling prices must be zero or more.')
+  }
+  const existing = (db.priceChanges ?? []).find((item) => item.productId === product.id && item.effectiveDate === day)
+  const record: ProductPriceChange = {
+    id: existing?.id ?? uid(),
+    productId: product.id,
+    effectiveDate: day,
+    costPrice,
+    sellingPrice,
+    createdBy: userId,
+    createdAt: now(),
+  }
+  const priceChanges = [...(db.priceChanges ?? []).filter((item) => item.id !== record.id), record]
+  const until = nextPriceChangeDate(priceChanges, product.id, day)
+  const repriced = repriceDayCloses(db.dayCloses ?? [], product, day, costPrice, sellingPrice, until)
+  const latest = latestPriceChange(priceChanges, product.id)
+  const products = db.products.map((item) =>
+    item.id === product.id && latest
+      ? { ...item, costPrice: latest.costPrice, sellingPrice: latest.sellingPrice, updatedAt: now() }
+      : item,
+  )
+  const next = audit(
+    { ...db, products, priceChanges, dayCloses: repriced.dayCloses },
+    userId,
+    'product.price_change',
+    'product',
+    product.id,
+    `Price change for ${product.name} from ${day}. ${repriced.updated} COGS sheet${repriced.updated === 1 ? '' : 's'} updated.`,
+  )
+  return finish(next, `${product.name} prices saved. ${repriced.updated} COGS sheet${repriced.updated === 1 ? '' : 's'} updated.`)
+}
+
 function productHasHistory(db: Database, productId: string) {
   return (
     db.sales.some((sale) => sale.items.some((item) => item.productId === productId)) ||
@@ -384,6 +433,7 @@ export function clearBusinessData(db: Database, userId: string): OpResult {
   const next: Database = {
     ...db,
     products: [],
+    priceChanges: [],
     suppliers: [],
     stockIns: [],
     sales: [],

@@ -53,6 +53,7 @@ import {
   updateDayCloseRemote,
   deleteDayCloseRemote,
   approveDayCloseRemote,
+  applyPriceChangeRemote,
   updatePasswordRemote,
   withdrawRemote,
 } from '@/services/supabase/gateway'
@@ -105,6 +106,7 @@ import {
   deleteDayClose,
   approveDayClose,
   updateOwnProfile,
+  applyPriceChange,
   updateProduct,
   updateSettings,
   type OpResult,
@@ -152,6 +154,7 @@ interface AppContextValue {
   activities: Database['activities']
   expenses: Database['expenses']
   dayCloses: Database['dayCloses']
+  priceChanges: Database['priceChanges']
   notifications: AppNotification[]
   auditLogs: Database['auditLogs']
   snapshots: ReturnType<typeof allSnapshots>
@@ -181,6 +184,7 @@ interface AppContextValue {
   removeSupplier: (id: string) => Promise<ActionResult>
   addProduct: (input: ProductDraft) => Promise<ActionResult>
   editProduct: (id: string, input: ProductDraft) => Promise<ActionResult>
+  applyPriceChange: (input: { productId: string; day: string; costPrice: number; sellingPrice: number }) => Promise<ActionResult>
   removeProduct: (id: string) => Promise<ActionResult>
   clearBusiness: () => Promise<ActionResult>
   addEmployee: (input: EmployeeDraft) => Promise<ActionResult>
@@ -554,6 +558,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     activities: db.activities,
     expenses: db.expenses,
     dayCloses: db.dayCloses ?? [],
+    priceChanges: db.priceChanges ?? [],
     notifications,
     auditLogs: db.auditLogs,
     snapshots,
@@ -634,6 +639,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     removeSupplier: async (id) => (remote ? runRemote(() => removeSupplierRemote(id)) : run((database, userId) => deleteSupplier(database, userId, id))),
     addProduct: async (input) => (remote ? runRemote(() => saveProductRemote(null, input)) : run((database, userId) => createProduct(database, userId, input))),
     editProduct: async (id, input) => (remote ? runRemote(() => saveProductRemote(id, input)) : run((database, userId) => updateProduct(database, userId, id, input))),
+    applyPriceChange: async (input) => (remote ? runRemote(() => applyPriceChangeRemote(input)) : run((database, userId) => applyPriceChange(database, userId, input))),
     removeProduct: async (id) => (remote ? runRemote(() => deleteProductRemote(id)) : run((database, userId) => deleteProduct(database, userId, id))),
     clearBusiness: async () => (remote ? runRemote(() => clearBusinessDataRemote()) : run((database, userId) => clearBusinessData(database, userId))),
     addEmployee: async (input) => (remote ? runRemote(() => saveEmployeeRemote(input)) : run((database, userId) => createEmployee(database, userId, input))),

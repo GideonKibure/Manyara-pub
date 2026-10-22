@@ -12,6 +12,7 @@ import { EmployeesPage } from '@/pages/admin/EmployeesPage'
 import { ExpensesPage as AdminExpensesPage } from '@/pages/admin/ExpensesPage'
 import { InventoryPage } from '@/pages/admin/InventoryPage'
 import { NotificationsPage as AdminNotificationsPage } from '@/pages/admin/NotificationsPage'
+import { ProductProfitPage } from '@/pages/admin/ProductProfitPage'
 import { ProductsPage } from '@/pages/admin/ProductsPage'
 import { ReportsPage } from '@/pages/admin/ReportsPage'
 import { SalesPage as AdminSalesPage } from '@/pages/admin/SalesPage'
@@ -66,6 +67,7 @@ export function AppRouter() {
           <Route element={<AdminLayout />}>
             <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
             <Route path="/admin/products" element={<ProductsPage />} />
+            <Route path="/admin/product-profit" element={<ProductProfitPage />} />
             <Route path="/admin/categories" element={<CategoriesPage />} />
             <Route path="/admin/stock-in" element={<AdminStockInPage />} />
             <Route path="/admin/stock-in/new" element={<EmployeeStockInPage />} />

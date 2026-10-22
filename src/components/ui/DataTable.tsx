@@ -19,6 +19,7 @@ export function DataTable<T>({
   resetKey = '',
   emptyTitle,
   emptyBody,
+  footer,
 }: {
   rows: T[]
   columns: Array<Column<T>>
@@ -27,6 +28,7 @@ export function DataTable<T>({
   resetKey?: string
   emptyTitle: string
   emptyBody?: string
+  footer?: ReactNode
 }) {
   const { t } = useI18n()
   const [page, setPage] = useState(1)
@@ -113,6 +115,7 @@ export function DataTable<T>({
               </tr>
             ))}
           </tbody>
+          {footer ? <tfoot className="border-t-2 border-stone-300 bg-amber-50/80">{footer}</tfoot> : null}
         </table>
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-3 text-sm text-stone-500 sm:px-4">

@@ -91,6 +91,16 @@ export interface Product {
   updatedAt: string
 }
 
+export interface ProductPriceChange {
+  id: string
+  productId: string
+  effectiveDate: string
+  costPrice: number
+  sellingPrice: number
+  createdBy: string
+  createdAt: string
+}
+
 export interface Supplier {
   id: string
   name: string
@@ -315,6 +325,7 @@ export interface Database {
   categories: Category[]
   units: Unit[]
   products: Product[]
+  priceChanges: ProductPriceChange[]
   suppliers: Supplier[]
   stockIns: StockInTransaction[]
   sales: SalesTransaction[]

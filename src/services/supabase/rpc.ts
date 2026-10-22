@@ -116,6 +116,11 @@ export async function adminApproveDayClose(id: string) {
   return client.rpc('admin_approve_day_close', { p_id: id })
 }
 
+export async function adminApplyPriceChange(productId: string, day: string, cost: number, selling: number) {
+  const client = await requireClient()
+  return client.rpc('admin_apply_price_change', { p_product: productId, p_day: day, p_cost: cost, p_selling: selling })
+}
+
 export async function submitStockIn(payload: Record<string, unknown>) {
   const client = await requireClient()
   return client.rpc('submit_stock_in', { p_payload: payload })

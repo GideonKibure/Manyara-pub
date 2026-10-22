@@ -35,6 +35,7 @@ import {
   adminUpdateDayClose,
   adminDeleteDayClose,
   adminApproveDayClose,
+  adminApplyPriceChange,
   staffDirectory,
   submitActivity,
   submitExpense,
@@ -67,6 +68,7 @@ import type {
   NotifyChannel,
   Product,
   ProductDraft,
+  ProductPriceChange,
   Profile,
   RecordDeleteKind,
   SaleDraft,
@@ -194,6 +196,7 @@ export function blankDatabase(): Database {
     categories: [],
     units: [],
     products: [],
+    priceChanges: [],
     suppliers: [],
     stockIns: [],
     sales: [],
@@ -300,6 +303,7 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
     settings,
     directory,
     dayCloses,
+    priceChanges,
   ] = await Promise.all([
     dbClient.from('profiles').select('*'),
     dbClient.from('categories').select('*'),
@@ -319,6 +323,7 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
     dbClient.from('business_settings').select('*').eq('id', 1).maybeSingle(),
     staffDirectory(),
     dbClient.from('day_closes').select('*'),
+    dbClient.from('product_price_changes').select('*'),
   ])
 
   const firstError = [
@@ -340,6 +345,7 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
     settings.error,
     directory.error,
     missingRelation(dayCloses.error) ? null : dayCloses.error,
+    missingRelation(priceChanges.error) ? null : priceChanges.error,
   ].find(Boolean)
   if (firstError) return { ok: false, error: errorText(firstError) }
 
@@ -453,6 +459,19 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
       })),
       units: rowsOf(units.data).map((row) => ({ id: str(row, 'id'), name: str(row, 'name'), abbreviation: str(row, 'abbreviation') })),
       products: rowsOf(products.data).map(mapProduct),
+      priceChanges: missingRelation(priceChanges.error)
+        ? []
+        : rowsOf(priceChanges.data).map(
+            (row): ProductPriceChange => ({
+              id: str(row, 'id'),
+              productId: str(row, 'product_id'),
+              effectiveDate: str(row, 'effective_date').slice(0, 10),
+              costPrice: num(row, 'cost_price'),
+              sellingPrice: num(row, 'selling_price'),
+              createdBy: str(row, 'created_by'),
+              createdAt: str(row, 'created_at'),
+            }),
+          ),
       suppliers: rowsOf(suppliers.data).map((row) => ({
         id: str(row, 'id'),
         name: str(row, 'name'),
@@ -1111,4 +1130,16 @@ export async function approveDayCloseRemote(id: string): Promise<ActionResult> {
   const result = await adminApproveDayClose(id)
   if (result.error) return fail(errorText(result.error))
   return { ok: true, message: 'COGS report approved.' }
+}
+
+export async function applyPriceChangeRemote(input: {
+  productId: string
+  day: string
+  costPrice: number
+  sellingPrice: number
+}): Promise<ActionResult> {
+  const result = await adminApplyPriceChange(input.productId, input.day, Math.round(input.costPrice), Math.round(input.sellingPrice))
+  if (result.error) return fail(errorText(result.error))
+  const updated = typeof result.data === 'number' ? result.data : 0
+  return { ok: true, message: `Prices saved. ${updated} COGS sheet${updated === 1 ? '' : 's'} updated.` }
 }

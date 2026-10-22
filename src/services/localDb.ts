@@ -8,7 +8,7 @@ export const DB_KEY = 'manyara.db.v2'
 const LOCAL_SESSION = 'manyara.session'
 const TAB_SESSION = 'manyara.session.tab'
 
-function normalizeStored(db: Database): Database {
+export function normalizeStored(db: Database): Database {
   let changed = false
   const products = db.products.map((product) => {
     const missingCost = product.sizeMode === 'many' && product.sizes.some((size) => typeof size.cost !== 'number')
@@ -37,6 +37,7 @@ function normalizeStored(db: Database): Database {
     return { ...sale, recordKind, items }
   })
   const expenses = Array.isArray(db.expenses) ? db.expenses : []
+  const priceChanges = Array.isArray(db.priceChanges) ? db.priceChanges : []
   const dayCloses = (Array.isArray(db.dayCloses) ? db.dayCloses : []).map((item) => ({
     ...item,
     lines: Array.isArray(item.lines) ? item.lines : [],
@@ -45,13 +46,13 @@ function normalizeStored(db: Database): Database {
     status: (item.status === 'approved' || item.status === 'rejected' || item.status === 'cancelled' ? item.status : 'pending') as ApprovalStatus,
   }))
   const counters = { ...db.counters, expense: typeof db.counters?.expense === 'number' ? db.counters.expense : 0 }
-  if (!Array.isArray(db.expenses) || !Array.isArray(db.dayCloses) || counters.expense !== db.counters?.expense) changed = true
+  if (!Array.isArray(db.expenses) || !Array.isArray(db.dayCloses) || !Array.isArray(db.priceChanges) || counters.expense !== db.counters?.expense) changed = true
   if (dayCloses.some((item, index) => item.expenseTotal !== db.dayCloses?.[index]?.expenseTotal || item.status !== db.dayCloses?.[index]?.status)) changed = true
   const settings = db.settings?.allowRemainingCount === true || db.settings?.allowRemainingCount === false
     ? db.settings
     : { ...db.settings, allowRemainingCount: false }
   if (settings !== db.settings) changed = true
-  return changed ? { ...db, products, sales, expenses, dayCloses, counters, settings } : db
+  return changed ? { ...db, products, sales, expenses, dayCloses, priceChanges, counters, settings } : db
 }
 
 const DROPPED_BILL = 'manyara.drop20k.v1'

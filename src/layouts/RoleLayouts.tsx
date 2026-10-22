@@ -10,6 +10,7 @@ import {
   Menu,
   Package,
   PackagePlus,
+  Percent,
   Receipt,
   ScrollText,
   Wallet,
@@ -56,6 +57,7 @@ export function AdminLayout() {
       label: t('navCatalog'),
       items: [
         { to: '/admin/products', label: t('navProducts'), icon: Package },
+        { to: '/admin/product-profit', label: t('navProductProfit'), icon: Percent },
         { to: '/admin/categories', label: t('navCategories'), icon: Tags },
       ],
     },

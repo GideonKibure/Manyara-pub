@@ -405,6 +405,7 @@ export function buildSeed(): Database {
       },
     ] satisfies ExpenseTransaction[],
     dayCloses: [],
+    priceChanges: [],
     notifications: [],
     auditLogs: auditLogs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     settings: {

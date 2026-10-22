@@ -9,6 +9,7 @@ import { ConfirmDialog, Modal } from '@/components/ui/Modal'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import { compileOffer, offerDraftFrom, SIZE_ORDER, type OfferDraft } from '@/features/products/offer'
+import { PriceChangeDialog } from '@/features/products/PriceChangeDialog'
 import { productSchema, type ProductValues } from '@/schemas'
 import type { Product, ProductSizeName } from '@/types'
 import { storeProductImage } from '@/utils/image'
@@ -41,6 +42,7 @@ export function ProductsPage() {
   const [open, setOpen] = useState(false)
   const [removing, setRemoving] = useState<Product | null>(null)
   const [removingBusy, setRemovingBusy] = useState(false)
+  const [pricing, setPricing] = useState<Product | null>(null)
 
   const rows = useMemo(
     () =>
@@ -119,6 +121,7 @@ export function ProductsPage() {
                   {snap && <StockBadge level={snap.level} />}
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button size="sm" variant="secondary" onClick={() => { setEditing(row); setOpen(true) }}>{t('productsEdit')}</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setPricing(row)}>{t('priceChange')}</Button>
                     <Button size="sm" variant="danger" onClick={() => setRemoving(row)}>{t('productsDelete')}</Button>
                   </div>
                 </div>
@@ -135,6 +138,7 @@ export function ProductsPage() {
           onClose={() => setOpen(false)}
         />
       )}
+      {pricing && <PriceChangeDialog product={pricing} onClose={() => setPricing(null)} />}
       <ConfirmDialog
         open={Boolean(removing)}
         title={t('productsDeleteTitle')}

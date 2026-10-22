@@ -788,7 +788,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
   }
 
-  if (!authReady) {
+  const holdBootSplash =
+    import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('boot')
+
+  if (!authReady || holdBootSplash) {
     return <BootScreen />
   }
 

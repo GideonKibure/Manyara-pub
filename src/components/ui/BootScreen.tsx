@@ -15,13 +15,13 @@ export function BootScreen({ message, hint }: { message?: string; hint?: string 
   return (
     <div className="boot-splash" role="status" aria-live="polite" aria-busy="true">
       <div className="boot-splash-glow" aria-hidden="true" />
-      <div className="boot-orbit" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
       <div className="boot-splash-card">
-        <BrandLogo className="boot-logo" />
+        <div className="boot-logo-wrap">
+          <span className="boot-logo-ring" aria-hidden="true" />
+          <span className="boot-logo-plate">
+            <BrandLogo className="boot-logo" />
+          </span>
+        </div>
         <p className="boot-kicker">Manyara Pub</p>
         <p className="boot-title">{message ?? t('bootLoading')}</p>
         <p className="boot-hint">{hint ?? t('bootLoadingHint')}</p>
@@ -43,8 +43,13 @@ export function LoadErrorScreen({ error, onBack }: { error: string; onBack: () =
   const { t } = useI18n()
   return (
     <div className="boot-splash">
+      <div className="boot-splash-glow" aria-hidden="true" />
       <div className="boot-splash-card">
-        <BrandLogo className="boot-logo" />
+        <div className="boot-logo-wrap">
+          <span className="boot-logo-plate">
+            <BrandLogo className="boot-logo" />
+          </span>
+        </div>
         <p className="boot-kicker">Manyara Pub</p>
         <p className="boot-title">{t('loadErrorTitle')}</p>
         <p className="boot-hint">{error}</p>

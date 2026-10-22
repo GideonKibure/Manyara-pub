@@ -262,6 +262,7 @@ export interface CogsLine {
   sold: number
   amount: number
   profit: number
+  unitCost?: number
 }
 
 export interface CogsExpenseLine {

@@ -1707,15 +1707,20 @@ function cleanDebts(items: DayDebt[]) {
     .filter((item) => item.customerName.length >= 2 && item.amount >= 1)
 }
 
+function halfQty(value: number) {
+  return Math.max(0, Math.round((value || 0) * 2) / 2)
+}
+
 function cleanLines(items: CogsLine[] = []) {
   return items
     .map((item) => ({
       productId: item.productId,
       name: item.name.trim(),
-      remaining: Math.max(0, Math.floor(item.remaining || 0)),
-      sold: Math.max(0, Math.floor(item.sold || 0)),
-      amount: Math.max(0, Math.floor(item.amount || 0)),
-      profit: Math.floor(item.profit || 0),
+      remaining: halfQty(item.remaining),
+      sold: halfQty(item.sold),
+      amount: Math.round(item.amount || 0),
+      profit: Math.round(item.profit || 0),
+      unitCost: item.unitCost == null ? undefined : Math.max(0, Math.round(item.unitCost)),
     }))
     .filter((item) => item.name.length >= 1)
 }

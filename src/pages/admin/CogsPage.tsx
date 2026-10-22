@@ -12,6 +12,7 @@ import { useI18n } from '@/i18n/LanguageContext'
 import type { CogsExpenseLine, CogsLine, DayClose, DayDebt } from '@/types'
 import { cn } from '@/utils/cn'
 import { asDateKey, dateKey, formatDate } from '@/utils/dates'
+import { uid } from '@/utils/id'
 
 function monthParts(cursor: Date) {
   return { year: cursor.getFullYear(), month: cursor.getMonth() }
@@ -69,10 +70,10 @@ export function CogsPage() {
 
   const openEdit = (item: DayClose) => {
     setEditing(item)
-    setDebts(item.debts)
+    setDebts((item.debts ?? []).map((row) => ({ ...row, id: row.id || uid() })))
     setMobile(item.mobileReceived)
     setLines(item.lines ?? [])
-    setExpenseItems(item.expenseItems ?? [])
+    setExpenseItems((item.expenseItems ?? []).map((row) => ({ ...row, id: row.id || uid() })))
   }
 
   const openAdd = (day: string) => {

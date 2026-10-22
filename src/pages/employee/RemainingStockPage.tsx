@@ -12,6 +12,7 @@ import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
 import type { CogsExpenseLine, CogsLine, DayDebt, Product } from '@/types'
 import { dateKey, dateKeyDaysAgo, employeeMinDateKey, isEmployeeAllowedDay } from '@/utils/dates'
+import { uid } from '@/utils/id'
 import { cn } from '@/utils/cn'
 
 function formatQty(value: number) {
@@ -187,8 +188,8 @@ export function RemainingStockPage() {
       setStep('count')
       return
     }
-    setDebts(myClose.debts)
-    setExpenseItems(myClose.expenseItems ?? [])
+    setDebts((myClose.debts ?? []).map((item) => ({ ...item, id: item.id || uid() })))
+    setExpenseItems((myClose.expenseItems ?? []).map((item) => ({ ...item, id: item.id || uid() })))
     setMobile(myClose.mobileReceived)
     setLines(myClose.lines ?? [])
     const nextRemain: Record<string, number | null> = {}
@@ -400,7 +401,7 @@ export function RemainingStockPage() {
               disabled={!description.trim() || amount == null || amount < 1 || locked}
               onClick={() => {
                 if (amount == null) return
-                setExpenseItems((current) => [...current, { description: description.trim(), amount, notes }])
+                setExpenseItems((current) => [...current, { id: uid(), description: description.trim(), amount, notes }])
                 setDescription('')
                 setAmount(null)
                 setNotes('')
@@ -410,7 +411,7 @@ export function RemainingStockPage() {
             </Button>
             <ul className="space-y-2">
               {expenseItems.map((item, index) => (
-                <li key={`${item.description}-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_8rem_auto]">
+                <li key={item.id ?? `expense-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_8rem_auto]">
                   <TextInput value={item.description} disabled={locked} onChange={(event) => setExpenseItems((current) => current.map((row, i) => (i === index ? { ...row, description: event.target.value } : row)))} />
                   <NumberInput value={item.amount} disabled={locked} onValueChange={(value) => setExpenseItems((current) => current.map((row, i) => (i === index ? { ...row, amount: value ?? 0 } : row)))} />
                   <Button size="sm" variant="danger" disabled={locked} onClick={() => setExpenseItems((current) => current.filter((_, i) => i !== index))}>{t('deleteRecord')}</Button>
@@ -426,14 +427,14 @@ export function RemainingStockPage() {
             <h2 className="font-semibold">{t('cogsDebtsTitle')}</h2>
             <p className="text-sm text-stone-600">{t('cogsDebtsBody')}</p>
             {debts.map((item, index) => (
-              <div key={`${item.customerName}-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_8rem_1fr_auto]">
-                <TextInput value={item.customerName} disabled={locked} placeholder={t('cogsCustomer')} onChange={(event) => setDebts((current) => current.map((row, i) => (i === index ? { ...row, customerName: event.target.value } : row)))} />
-                <NumberInput value={item.amount} disabled={locked} onValueChange={(value) => setDebts((current) => current.map((row, i) => (i === index ? { ...row, amount: value ?? 0 } : row)))} />
-                <TextInput value={item.products} disabled={locked} placeholder={t('cogsDebtProducts')} onChange={(event) => setDebts((current) => current.map((row, i) => (i === index ? { ...row, products: event.target.value } : row)))} />
-                <Button size="sm" variant="danger" disabled={locked} onClick={() => setDebts((current) => current.filter((_, i) => i !== index))}>{t('deleteRecord')}</Button>
+              <div key={item.id ?? `debt-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_8rem_1fr_auto]">
+                <TextInput value={item.customerName} disabled={locked} placeholder={t('cogsCustomer')} autoComplete="name" onChange={(event) => setDebts((current) => current.map((row) => (row.id === item.id ? { ...row, customerName: event.target.value } : row)))} />
+                <NumberInput value={item.amount} disabled={locked} onValueChange={(value) => setDebts((current) => current.map((row) => (row.id === item.id ? { ...row, amount: value ?? 0 } : row)))} />
+                <TextInput value={item.products} disabled={locked} placeholder={t('cogsDebtProducts')} onChange={(event) => setDebts((current) => current.map((row) => (row.id === item.id ? { ...row, products: event.target.value } : row)))} />
+                <Button size="sm" variant="danger" disabled={locked} onClick={() => setDebts((current) => current.filter((row) => row.id !== item.id))}>{t('deleteRecord')}</Button>
               </div>
             ))}
-            <Button variant="secondary" disabled={locked} onClick={() => setDebts((current) => [...current, { customerName: '', amount: 0, products: '' }])}>{t('cogsAddDebt')}</Button>
+            <Button variant="secondary" disabled={locked} onClick={() => setDebts((current) => [...current, { id: uid(), customerName: '', amount: 0, products: '' }])}>{t('cogsAddDebt')}</Button>
           </Panel>
         )}
 

@@ -153,7 +153,7 @@ function mapDebts(value: unknown): DayDebt[] {
     const customerName = str(row, 'customerName') || str(row, 'customer_name')
     const amount = num(row, 'amount')
     if (customerName.length < 2 || amount < 1) return []
-    return [{ customerName, amount, products: str(row, 'products') }]
+    return [{ id: str(row, 'id') || undefined, customerName, amount, products: str(row, 'products') }]
   })
 }
 
@@ -183,7 +183,7 @@ function mapExpenseItems(value: unknown): CogsExpenseLine[] {
     const description = str(row, 'description')
     const amount = num(row, 'amount')
     if (description.length < 2 || amount < 1) return []
-    return [{ description, amount, notes: str(row, 'notes') }]
+    return [{ id: str(row, 'id') || undefined, description, amount, notes: str(row, 'notes') }]
   })
 }
 

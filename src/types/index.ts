@@ -250,6 +250,7 @@ export interface BusinessSettings {
 export type RecordDeleteKind = 'stock_in' | 'sale' | 'expense'
 
 export interface DayDebt {
+  id?: string
   customerName: string
   amount: number
   products: string
@@ -266,6 +267,7 @@ export interface CogsLine {
 }
 
 export interface CogsExpenseLine {
+  id?: string
   description: string
   amount: number
   notes: string

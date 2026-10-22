@@ -1700,6 +1700,7 @@ export function deleteBusinessRecord(db: Database, userId: string, kind: RecordD
 function cleanDebts(items: DayDebt[]) {
   return items
     .map((item) => ({
+      id: item.id,
       customerName: item.customerName.trim(),
       amount: Math.max(0, Math.floor(item.amount || 0)),
       products: item.products.trim(),

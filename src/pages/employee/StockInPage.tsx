@@ -5,6 +5,7 @@ import { ProductPicker, ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, SelectInput, TextArea, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel } from '@/components/ui/Feedback'
+import { StockInPdfButton } from '@/features/stockIn/StockInPdfButton'
 import { sizeCost } from '@/features/products/offer'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
@@ -221,7 +222,11 @@ export function StockInPage() {
 
   return (
     <div className={preview.length ? 'pb-20 md:pb-0' : undefined}>
-      <PageHeader title={editing ? 'Edit stock delivery' : t('stockTitle')} description={editing ? 'The invoice number stays the same. Saving updates the supplier, the date, and the products.' : employeeSubmit ? t('stockDescription') : t('stockAdminDescription')} />
+      <PageHeader
+        title={editing ? 'Edit stock delivery' : t('stockTitle')}
+        description={editing ? 'The invoice number stays the same. Saving updates the supplier, the date, and the products.' : employeeSubmit ? t('stockDescription') : t('stockAdminDescription')}
+        actions={<StockInPdfButton className="w-full sm:w-auto" />}
+      />
       {corrects && !correctionSent && <p className="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-950">{t('salesCorrecting')} {corrects.code}. {t('stockCorrecting')}</p>}
       <div className="grid items-start gap-4 md:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)]">
         <div ref={formRef}>

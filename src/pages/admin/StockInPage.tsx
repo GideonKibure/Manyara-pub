@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApproveAllButton } from '@/components/ui/ApproveAll'
 import { Button } from '@/components/ui/Button'
+import { StockInPdfButton } from '@/features/stockIn/StockInPdfButton'
 import { DataTable } from '@/components/ui/DataTable'
 import { Field, SelectInput, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
@@ -48,6 +49,7 @@ export function StockInPage() {
         description={t('pageStockReceivedBody')}
         actions={
           <span className="flex w-full flex-wrap gap-2 sm:w-auto">
+            <StockInPdfButton className="flex-1 sm:flex-none" />
             <Button variant="secondary" className="flex-1 sm:flex-none" onClick={() => setSupplierOpen(true)}>{t('pageAddSupplier')}</Button>
             <Button variant="gold" className="flex-1 sm:flex-none" onClick={() => navigate('/admin/stock-in/new')}>Add stock</Button>
           </span>

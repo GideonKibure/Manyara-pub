@@ -62,6 +62,20 @@
   transform: scale(0.98);
 }
 
+.profit-fill {
+  transform-origin: left center;
+  animation: profit-grow 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes profit-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
   .review-line:hover {
     transform: translateY(-3px);
@@ -95,6 +109,7 @@
   .reveal-card,
   .review-sheet,
   .review-line,
+  .profit-fill,
   .nav-tab {
     opacity: 1 !important;
     transform: none !important;

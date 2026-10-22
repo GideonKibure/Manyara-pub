@@ -5,12 +5,16 @@ import { ProductPicker, ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, SelectInput, TextArea, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel } from '@/components/ui/Feedback'
+import { Modal } from '@/components/ui/Modal'
 import { StockInPdfButton } from '@/features/stockIn/StockInPdfButton'
+import { StockInRecordCard } from '@/features/stockIn/StockInRecordCard'
+import { stockInMatchesQuery } from '@/features/stockIn/stockInSearch'
+import { StockInDetail } from '@/features/transactions/Details'
 import { sizeCost } from '@/features/products/offer'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
-import type { SaleSize } from '@/types'
+import type { SaleSize, StockInTransaction } from '@/types'
 import { dateKey, employeeMinDateKey, isEmployeeAllowedDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { nextInvoiceRef } from '@/utils/invoice'
@@ -60,7 +64,13 @@ export function StockInPage() {
   const [editingLineId, setEditingLineId] = useState<string | null>(null)
   const [supplierName, setSupplierName] = useState(source?.supplierName ?? '')
   const [newSupplier, setNewSupplier] = useState(false)
-  const [deliveryDate, setDeliveryDate] = useState(source?.deliveryDate ?? dateKey())
+  const dayParam = params.get('day')
+  const [deliveryDate, setDeliveryDate] = useState(
+    source?.deliveryDate
+    ?? (dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam) && dayParam <= dateKey() ? dayParam : dateKey()),
+  )
+  const [deliveryQuery, setDeliveryQuery] = useState('')
+  const [openDelivery, setOpenDelivery] = useState<StockInTransaction | null>(null)
   const [notes, setNotes] = useState(source?.notes ?? '')
   const [usedInvoices, setUsedInvoices] = useState<string[]>([])
   const [correctionSent, setCorrectionSent] = useState(false)
@@ -93,6 +103,12 @@ export function StockInPage() {
   }), [lines, app.products, t])
   const unitsTotal = stockInUnits(preview.map((line) => ({ stockQuantity: line.stockQuantity })))
   const costTotal = stockInTotal(preview.map((line) => ({ totalCost: line.total })))
+  const myDeliveries = useMemo(() => {
+    if (app.user?.role === 'admin') return []
+    return app.stockIns
+      .filter((item) => item.submittedBy === app.user?.id && stockInMatchesQuery(item, app.products, deliveryQuery))
+      .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+  }, [app.products, app.stockIns, app.user?.id, app.user?.role, deliveryQuery])
 
   function sizeOf(line: { sizeName: SaleSize }) {
     return line.sizeName === 'one' ? '' : ` · ${t(sizeLabel(line.sizeName))}`
@@ -371,6 +387,24 @@ export function StockInPage() {
           </div>
         </Panel>
       </div>
+      {app.user?.role !== 'admin' && (
+        <Panel className="mt-4 space-y-3">
+          <div>
+            <h2 className="font-semibold">{t('stockMyDeliveries')}</h2>
+            <p className="text-sm text-stone-500">{t('stockMyDeliveriesBody')}</p>
+          </div>
+          <TextInput value={deliveryQuery} onChange={(event) => setDeliveryQuery(event.target.value)} placeholder={t('searchDeliveries')} aria-label={t('searchDeliveries')} />
+          <div className="grid gap-3 lg:grid-cols-2">
+            {myDeliveries.slice(0, 8).map((item) => (
+              <StockInRecordCard key={item.id} record={item} showDate onView={setOpenDelivery} />
+            ))}
+          </div>
+          {!myDeliveries.length && <p className="text-sm text-stone-500">{t('emptyDeliveries')}</p>}
+        </Panel>
+      )}
+      <Modal open={Boolean(openDelivery)} title={t('deliveryDetails')} onClose={() => setOpenDelivery(null)} wide>
+        {openDelivery && <StockInDetail record={app.stockIns.find((item) => item.id === openDelivery.id) ?? openDelivery} mode="own" />}
+      </Modal>
       {preview.length > 0 && (
         <div className="fixed inset-x-3 z-30 md:hidden" style={{ bottom: 'calc(6.75rem + env(safe-area-inset-bottom))' }}>
           <Button className="w-full shadow-lg shadow-amber-900/25" variant="gold" disabled={!supplierReady} onClick={() => setReview(true)}>{t('stockReview')} · {preview.length} · {app.money(costTotal)}</Button>

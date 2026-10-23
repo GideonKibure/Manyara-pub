@@ -136,6 +136,7 @@
   .cogs-dock {
     left: var(--sidebar-offset, 18rem);
     bottom: 1.25rem;
+    justify-content: center;
     padding-left: 2rem;
     padding-right: 2rem;
     transition: left 0.2s ease;
@@ -151,9 +152,8 @@
 
 @media (min-width: 768px) {
   .cogs-dock-inner {
-    width: min(28rem, calc(100% - 0.5rem));
-    margin-left: 0;
-    margin-right: auto;
+    width: min(28rem, 100%);
+    margin: 0;
     gap: 0.55rem;
   }
 }

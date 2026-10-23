@@ -505,13 +505,13 @@ export function RemainingStockPage() {
         <div className="cogs-dock">
           <div
             className={cn(
-              'cogs-dock-inner pointer-events-auto mx-auto w-full max-w-5xl rounded-[1.55rem] border border-white/55 bg-stone-950/90 p-1.5 shadow-[0_18px_40px_rgba(28,25,23,0.28)] backdrop-blur-xl sm:p-2',
+              'cogs-dock-inner pointer-events-auto rounded-[1.15rem] border border-white/55 bg-stone-950/90 p-1 shadow-[0_14px_32px_rgba(28,25,23,0.28)] backdrop-blur-xl sm:rounded-[1.35rem] sm:p-1.5 md:p-2',
               step === 'count' || step === 'sheet' ? 'grid-cols-2' : 'grid-cols-3',
             )}
           >
             {step !== 'count' && (
               <Button variant="secondary" className="cogs-dock-btn cogs-dock-btn-back bg-white/95" onClick={() => setStep(prevStep(step))}>
-                <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+                <ChevronLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4 md:h-5 md:w-5" />
                 <span className="truncate">{t('cogsBack')}</span>
               </Button>
             )}
@@ -522,7 +522,7 @@ export function RemainingStockPage() {
               disabled={blocked || !filled.length}
               onClick={() => void persist()}
             >
-              <Save className="h-4 w-4 sm:h-5 sm:w-5" />
+              <Save className="h-3.5 w-3.5 sm:h-4 sm:w-4 md:h-5 md:w-5" />
               <span className="truncate">{t('save')}</span>
             </Button>
             {step !== 'sheet' && (
@@ -536,7 +536,7 @@ export function RemainingStockPage() {
                 }}
               >
                 <span className="truncate">{t('cogsNext')}</span>
-                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
+                <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4 md:h-5 md:w-5" />
               </Button>
             )}
           </div>

@@ -171,7 +171,10 @@ export function AppShell({
           </aside>
         </div>
       )}
-      <div className={cn('min-h-screen transition-[padding] duration-200', collapsed ? 'md:pl-20' : 'md:pl-72')}>
+      <div
+        className={cn('min-h-screen transition-[padding] duration-200', collapsed ? 'md:pl-20' : 'md:pl-72')}
+        style={{ ['--sidebar-offset' as string]: collapsed ? '5rem' : '18rem' }}
+      >
         <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-white/70 bg-white/55 px-3 py-2 backdrop-blur-xl md:justify-start sm:px-4">
           <button type="button" className="rounded-full ring-2 ring-amber-700/40 ring-offset-2 ring-offset-paper md:hidden" aria-label={t('openMenu')} aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}>
             <PersonPhoto src={user?.imageUrl} name={user?.fullName ?? 'M'} className="h-11 w-11 text-base" />

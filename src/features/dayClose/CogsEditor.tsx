@@ -16,7 +16,6 @@ export function CogsEditor({
   onDebts,
   mobile,
   onMobile,
-  asAdmin = false,
 }: {
   lines: CogsLine[]
   onLines: (next: CogsLine[]) => void
@@ -26,7 +25,6 @@ export function CogsEditor({
   onDebts: (next: DayDebt[]) => void
   mobile: number | null
   onMobile: (next: number | null) => void
-  asAdmin?: boolean
 }) {
   const app = useApp()
   const { t } = useI18n()
@@ -64,7 +62,6 @@ export function CogsEditor({
           <DebtCard
             key={item.id ?? `debt-${index}`}
             item={item}
-            asAdmin={asAdmin}
             onChange={(next) => onDebts(debts.map((row) => (row.id === item.id ? next : row)))}
             onRemove={() => onDebts(debts.filter((row) => row.id !== item.id))}
           />

@@ -256,7 +256,7 @@ export function RemainingStockPage() {
     { label: t('remainLeft'), value: formatQty(leftUnits), hint: t('remainUnits'), icon: ClipboardCheck, tone: 'from-white to-amber-50 text-ink border border-white/80' },
   ] as const
 
-  const persist = async () => {
+  const persist = async (nextDebts = debts, stayOnSheet = false) => {
     if (blocked || locked) return
     setBusy(true)
     const payloadLines = step === 'count' || !lines.length ? countedRows : lines
@@ -273,21 +273,24 @@ export function RemainingStockPage() {
     const result = await app.saveDayClose({
       day: cogsDay,
       remainingSaleId: saleId,
-      debts,
+      debts: nextDebts,
       mobileReceived: mobile ?? 0,
       expenseTotal: expenseItems.reduce((sum, item) => sum + item.amount, 0),
       lines: payloadLines,
       expenseItems,
     })
     setBusy(false)
-    if (result.ok) setStep('sheet')
+    if (result.ok && !stayOnSheet) setStep('sheet')
   }
 
   const nextStep = (from: Step) => steps[Math.min(steps.indexOf(from) + 1, steps.length - 1)]
   const prevStep = (from: Step) => steps[Math.max(steps.indexOf(from) - 1, 0)]
 
   return (
-    <div className="employee-dash remaining-close relative -mx-3 -mt-4 min-h-[calc(100dvh-4.5rem)] px-3 pb-[calc(8.5rem+env(safe-area-inset-bottom))] pt-5 sm:-mx-4 sm:-mt-6 sm:px-4 sm:pt-6 md:-mx-8 md:-mb-8 md:px-8 md:pb-28">
+    <div className={cn(
+      'employee-dash remaining-close relative -mx-3 -mt-4 min-h-[calc(100dvh-4.5rem)] px-3 pb-[calc(8.5rem+env(safe-area-inset-bottom))] pt-5 sm:-mx-4 sm:-mt-6 sm:px-4 sm:pt-6 md:-mx-8 md:-mb-8 md:px-8 md:pb-28',
+      step === 'count' && allowed && !locked && 'cogs-has-search',
+    )}>
       <div className="mx-auto w-full max-w-5xl space-y-4">
         <PageHeader title={t('remainTitle')} description={t('remainBody')} />
         <div className="flex flex-wrap items-center gap-2">
@@ -342,34 +345,6 @@ export function RemainingStockPage() {
             {allowed && !locked && (
               <div className="space-y-3">
                 {myClose?.remainingSaleId && <p className="rounded-2xl bg-white/70 px-3 py-2 text-xs leading-5 text-stone-600">{t('cogsStockAlreadySent')}</p>}
-                <div className="sticky top-2 z-20 space-y-2">
-                  <div className="glass-panel flex items-center gap-2 rounded-2xl px-3 py-2">
-                    <Search className="h-4 w-4 shrink-0 text-amber-800" />
-                    <input
-                      ref={searchInputRef}
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      placeholder={t('pickerPlaceholder')}
-                      aria-label={t('remainSearch')}
-                      className="min-w-0 flex-1 bg-transparent text-base font-semibold text-ink outline-none placeholder:font-normal placeholder:text-stone-400"
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {(['all', 'open', 'done'] as const).map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => setFilter(item)}
-                        className={cn('rounded-full px-3 py-1.5 text-xs font-semibold', filter === item ? 'bg-stone-950 text-white' : 'glass-panel text-stone-600')}
-                      >
-                        {t(item === 'all' ? 'cogsFilterAll' : item === 'open' ? 'cogsFilterOpen' : 'cogsFilterDone')}
-                      </button>
-                    ))}
-                    <span className="text-xs font-semibold text-stone-500">
-                      {t('cogsCountProgress').replace('{n}', String(countedIds)).replace('{total}', String(filled.length))}
-                    </span>
-                  </div>
-                </div>
                 {!filled.length && <p className="rounded-3xl border border-dashed border-stone-300 bg-white/60 px-4 py-8 text-center text-sm text-stone-500">{t('remainNoneInStock')}</p>}
                 <div className="grid gap-2.5 sm:grid-cols-2">
                   {listed.map((row) => (
@@ -481,6 +456,12 @@ export function RemainingStockPage() {
               mobile={mobile ?? 0}
               staff={`${app.user?.fullName ?? ''} @${app.user?.username ?? ''}`}
               approved={myClose?.status === 'approved'}
+              canPay={!locked}
+              onPay={async (item) => {
+                const next = debts.map((row) => (row.id === item.id ? item : row))
+                setDebts(next)
+                await persist(next, true)
+              }}
             />
             {myClose && !locked && (
               <Button variant="danger" loading={busy} onClick={async () => {
@@ -500,6 +481,39 @@ export function RemainingStockPage() {
           </div>
         )}
       </div>
+
+      {step === 'count' && allowed && !locked && (
+        <div className="cogs-search-float">
+          <div className="mx-auto w-full max-w-5xl space-y-2 rounded-2xl bg-paper/80 p-1.5 shadow-[0_10px_28px_rgba(28,25,23,0.08)] backdrop-blur-xl sm:p-2">
+            <div className="glass-panel flex items-center gap-2 rounded-2xl px-3 py-2">
+              <Search className="h-4 w-4 shrink-0 text-amber-800" />
+              <input
+                ref={searchInputRef}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t('pickerPlaceholder')}
+                aria-label={t('remainSearch')}
+                className="min-w-0 flex-1 bg-transparent text-base font-semibold text-ink outline-none placeholder:font-normal placeholder:text-stone-400"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 px-0.5">
+              {(['all', 'open', 'done'] as const).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setFilter(item)}
+                  className={cn('rounded-full px-3 py-1.5 text-xs font-semibold', filter === item ? 'bg-stone-950 text-white' : 'glass-panel text-stone-600')}
+                >
+                  {t(item === 'all' ? 'cogsFilterAll' : item === 'open' ? 'cogsFilterOpen' : 'cogsFilterDone')}
+                </button>
+              ))}
+              <span className="text-xs font-semibold text-stone-500">
+                {t('cogsCountProgress').replace('{n}', String(countedIds)).replace('{total}', String(filled.length))}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {allowed && !locked && (
         <div className="cogs-dock">

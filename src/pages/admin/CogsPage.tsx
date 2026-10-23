@@ -6,7 +6,6 @@ import { Field, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
 import { CogsEditor } from '@/features/dayClose/CogsEditor'
-import { DebtCard } from '@/features/dayClose/DebtCard'
 import { hasPendingDebtPayment } from '@/features/dayClose/debts'
 import { CogsSheet, reportFromCount } from '@/features/reports/SalesDayReport'
 import { useApp } from '@/context/AppContext'
@@ -162,31 +161,6 @@ export function CogsPage() {
                   <StaffCell id={item.submittedBy} />
                   <StatusBadge status={item.status} />
                 </div>
-                {item.debts.some(hasPendingDebtPayment) && (
-                  <div className="space-y-3">
-                    <p className="text-sm font-semibold text-amber-900">{t('cogsPendingPayments')}</p>
-                    {item.debts.filter(hasPendingDebtPayment).map((debt) => (
-                      <DebtCard
-                        key={debt.id ?? debt.customerName}
-                        item={debt}
-                        review
-                        busy={reviewingDebt === `${item.id}:${debt.id}`}
-                        onApprove={async () => {
-                          if (!debt.id) return
-                          setReviewingDebt(`${item.id}:${debt.id}`)
-                          await app.reviewDebtPayment(item.id, debt.id, true)
-                          setReviewingDebt('')
-                        }}
-                        onReject={async () => {
-                          if (!debt.id) return
-                          setReviewingDebt(`${item.id}:${debt.id}`)
-                          await app.reviewDebtPayment(item.id, debt.id, false)
-                          setReviewingDebt('')
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
                 <CogsSheet
                   rows={rows}
                   day={item.day}
@@ -195,6 +169,27 @@ export function CogsPage() {
                   mobile={item.mobileReceived}
                   staff={`${person?.fullName ?? ''} @${person?.username ?? ''}`}
                   approved={item.status === 'approved'}
+                  canPay
+                  asAdmin
+                  payBusy={reviewingDebt.startsWith(`${item.id}:`) ? reviewingDebt.slice(item.id.length + 1) : ''}
+                  onPay={async (debt) => {
+                    if (!debt.id) return
+                    setReviewingDebt(`${item.id}:${debt.id}`)
+                    await app.setDayCloseDebtPayment(item.id, debt.id, debt.paidAmount ?? 0)
+                    setReviewingDebt('')
+                  }}
+                  onApprovePayment={async (debt) => {
+                    if (!debt.id) return
+                    setReviewingDebt(`${item.id}:${debt.id}`)
+                    await app.reviewDebtPayment(item.id, debt.id, true)
+                    setReviewingDebt('')
+                  }}
+                  onRejectPayment={async (debt) => {
+                    if (!debt.id) return
+                    setReviewingDebt(`${item.id}:${debt.id}`)
+                    await app.reviewDebtPayment(item.id, debt.id, false)
+                    setReviewingDebt('')
+                  }}
                 />
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(item)}>{t('edit')}</Button>
@@ -222,7 +217,6 @@ export function CogsPage() {
           <div className="space-y-4">
             <StaffCell id={editing.submittedBy} />
             <CogsEditor
-              asAdmin
               lines={lines}
               onLines={setLines}
               expenses={expenseItems}
@@ -264,7 +258,6 @@ export function CogsPage() {
             <TextInput type="date" max={dateKey()} value={addDay} onChange={(event) => setAddDay(event.target.value)} />
           </Field>
           <CogsEditor
-            asAdmin
             lines={lines}
             onLines={setLines}
             expenses={expenseItems}

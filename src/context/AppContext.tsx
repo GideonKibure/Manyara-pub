@@ -54,6 +54,7 @@ import {
   deleteDayCloseRemote,
   approveDayCloseRemote,
   reviewDebtPaymentRemote,
+  setDayCloseDebtPaymentRemote,
   applyPriceChangeRemote,
   updatePasswordRemote,
   withdrawRemote,
@@ -107,6 +108,7 @@ import {
   deleteDayClose,
   approveDayClose,
   reviewDebtPayment,
+  setDayCloseDebtPayment,
   updateOwnProfile,
   applyPriceChange,
   updateProduct,
@@ -225,6 +227,7 @@ interface AppContextValue {
   deleteDayClose: (id: string) => Promise<ActionResult>
   approveDayClose: (id: string) => Promise<ActionResult>
   reviewDebtPayment: (closeId: string, debtId: string, approve: boolean) => Promise<ActionResult>
+  setDayCloseDebtPayment: (closeId: string, debtId: string, paidAmount: number) => Promise<ActionResult>
   acceptStockIn: (id: string) => Promise<ActionResult>
   declineStockIn: (id: string, reason: string) => Promise<ActionResult>
   acceptSale: (id: string) => Promise<ActionResult>
@@ -766,6 +769,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deleteDayClose: async (id) => (remote ? runRemote(() => deleteDayCloseRemote(id)) : run((database, userId) => deleteDayClose(database, userId, id))),
     approveDayClose: async (id) => (remote ? runRemote(() => approveDayCloseRemote(id)) : run((database, userId) => approveDayClose(database, userId, id))),
     reviewDebtPayment: async (closeId, debtId, approve) => (remote ? runRemote(() => reviewDebtPaymentRemote(closeId, debtId, approve)) : run((database, userId) => reviewDebtPayment(database, userId, closeId, debtId, approve))),
+    setDayCloseDebtPayment: async (closeId, debtId, paidAmount) => (remote ? runRemote(() => setDayCloseDebtPaymentRemote(closeId, debtId, paidAmount)) : run((database, userId) => setDayCloseDebtPayment(database, userId, closeId, debtId, paidAmount))),
     acceptStockIn: async (id) => (remote ? runRemote(() => acceptStockInRemote(id)) : run((database, userId) => approveStockIn(database, userId, id))),
     declineStockIn: async (id, reason) => (remote ? runRemote(() => declineStockInRemote(id, reason)) : run((database, userId) => rejectStockIn(database, userId, id, reason))),
     acceptSale: async (id) => (remote ? runRemote(() => acceptSaleRemote(id)) : run((database, userId) => approveSale(database, userId, id))),

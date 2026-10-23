@@ -1,10 +1,13 @@
+import { useState } from 'react'
+import { Download } from 'lucide-react'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Button } from '@/components/ui/Button'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import { formatDate } from '@/utils/dates'
 import { cogsTotals } from '@/features/dayClose/cogs'
-import { debtPaid, debtRemaining, debtStatus } from '@/features/dayClose/debts'
+import { DebtPayDialog } from '@/features/dayClose/DebtCard'
+import { debtPaid, debtRemaining, debtStatus, setDebtPayment } from '@/features/dayClose/debts'
 import { downloadStyledPdf, type StyledReport } from '@/utils/pdf'
 import { cn } from '@/utils/cn'
 import type { Database, DayDebt, SalesTransaction } from '@/types'
@@ -243,6 +246,12 @@ export function CogsSheet({
   mobile,
   staff,
   approved = false,
+  canPay = false,
+  asAdmin = false,
+  payBusy = '',
+  onPay,
+  onApprovePayment,
+  onRejectPayment,
 }: {
   rows: SalesDayRow[]
   day: string
@@ -251,21 +260,34 @@ export function CogsSheet({
   mobile: number
   staff?: string
   approved?: boolean
+  canPay?: boolean
+  asAdmin?: boolean
+  payBusy?: string
+  onPay?: (item: DayDebt, paidAmount: number) => void
+  onApprovePayment?: (item: DayDebt) => void
+  onRejectPayment?: (item: DayDebt) => void
 }) {
   const app = useApp()
   const { t } = useI18n()
+  const [paying, setPaying] = useState<DayDebt | null>(null)
   const totals = cogsTotals(rows, expenses, debts, mobile)
   const lines = [
-    [t('remainRevenue'), app.money(totals.sales)],
-    [t('cogsCost'), app.money(totals.cogs)],
-    [t('cogsGross'), app.money(totals.gross)],
-    [t('navExpenses'), app.money(totals.expenses)],
-    [t('cogsStepDebts'), app.money(totals.debtTotal)],
-    [t('cogsCollections'), app.money(totals.collections)],
-    [t('cogsMobileTitle'), app.money(totals.mobile)],
-    [t('cogsCash'), app.money(totals.cash)],
-    [t('cogsNet'), app.money(totals.net)],
-  ] as const
+    { id: 'sales', label: t('remainRevenue'), amount: totals.sales, tone: 'plain' as const },
+    { id: 'cogs', label: t('cogsCost'), amount: totals.cogs, tone: 'plain' as const },
+    { id: 'gross', label: t('cogsGross'), amount: totals.gross, tone: 'subtotal' as const },
+    { id: 'expenses', label: t('navExpenses'), amount: totals.expenses, tone: 'plain' as const },
+    { id: 'debts', label: t('cogsStepDebts'), amount: totals.debtTotal, tone: 'plain' as const },
+    { id: 'collections', label: t('cogsCollections'), amount: totals.collections, tone: 'plain' as const },
+    { id: 'mobile', label: t('cogsMobileTitle'), amount: totals.mobile, tone: 'plain' as const },
+    { id: 'cash', label: t('cogsCash'), amount: totals.cash, tone: 'subtotal' as const },
+    { id: 'net', label: t('cogsNet'), amount: totals.net, tone: 'hero' as const },
+  ]
+  const kpis = [
+    { label: t('remainRevenue'), amount: totals.sales },
+    { label: t('cogsCost'), amount: totals.cogs },
+    { label: t('cogsCash'), amount: totals.cash },
+    { label: t('cogsNet'), amount: totals.net, emphasis: true },
+  ]
 
   const download = () => {
     downloadStyledPdf(`cogs-${day}.pdf`, {
@@ -315,65 +337,142 @@ export function CogsSheet({
             { header: t('summaryCol'), width: 0.6 },
             { header: t('cogsDebtAmount'), width: 0.4, align: 'right' },
           ],
-          rows: lines.map(([label, value]) => [label, value]),
+          rows: lines.map((line) => [line.label, app.money(line.amount)]),
         },
       ],
     })
   }
 
   return (
-    <div className="glass-panel reveal-card overflow-hidden rounded-[1.75rem]">
-      <div className="bg-gradient-to-br from-stone-950 via-stone-900 to-amber-950 px-4 py-5 text-white sm:px-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-300">{t('cogsSheetTitle')}</p>
-        <h2 className="mt-1 font-display text-2xl leading-tight">{formatDate(day)}</h2>
-        <span className={cn('mt-2 inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide', approved ? 'bg-emerald-400/20 text-emerald-200' : 'bg-amber-400/20 text-amber-200')}>
-          {approved ? t('statusApproved') : t('statusPending')}
-        </span>
-        {staff && <p className="mt-1 text-sm text-stone-300">{staff}</p>}
+    <div className="overflow-visible rounded-[1.75rem] border border-[#e6e0d6] bg-[#faf7f2] shadow-[0_16px_40px_rgba(28,25,23,0.08)]">
+      <div className="cogs-sheet-head sticky z-20 bg-gradient-to-br from-stone-800 via-stone-800 to-amber-950 px-4 pb-4 pt-4 text-white sm:px-5 sm:pb-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-300/90">{t('cogsSheetTitle')}</p>
+            <h2 className="mt-1 font-display text-[1.7rem] leading-[1.15] sm:text-3xl">{formatDate(day)}</h2>
+            {staff ? <p className="mt-1 truncate text-xs text-stone-400">{staff}</p> : null}
+          </div>
+          <span className={cn(
+            'shrink-0 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+            approved ? 'bg-emerald-400/15 text-emerald-200 ring-1 ring-emerald-300/25' : 'bg-amber-400/15 text-amber-200 ring-1 ring-amber-300/25',
+          )}>
+            {approved ? t('statusApproved') : t('statusPending')}
+          </span>
+        </div>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[
-            [t('remainRevenue'), app.money(totals.sales)],
-            [t('cogsCost'), app.money(totals.cogs)],
-            [t('cogsCash'), app.money(totals.cash)],
-            [t('cogsNet'), app.money(totals.net)],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-2xl bg-white/10 px-3 py-2.5 ring-1 ring-white/10">
-              <p className="text-[10px] uppercase tracking-wide text-amber-200/80">{label}</p>
-              <p className="mt-1 break-words text-sm font-semibold tabular-nums sm:text-base">{value}</p>
+          {kpis.map((item) => (
+            <div
+              key={item.label}
+              className={cn(
+                'rounded-2xl px-3 py-2.5 ring-1',
+                item.emphasis ? 'bg-amber-400/15 ring-amber-300/25' : 'bg-white/[0.07] ring-white/10',
+              )}
+            >
+              <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-amber-200/75">{item.label}</p>
+              <p className={cn('mt-1 break-words text-sm font-semibold tabular-nums sm:text-[0.95rem]', item.amount < 0 && 'text-rose-200')}>{app.money(item.amount)}</p>
             </div>
           ))}
         </div>
       </div>
-      <div className="space-y-3 p-4 sm:p-5">
-        {lines.map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between gap-3 rounded-2xl bg-white/50 px-3 py-2.5 text-sm">
-            <span className="text-stone-600">{label}</span>
-            <span className="font-semibold tabular-nums text-ink">{value}</span>
-          </div>
-        ))}
+      <div className="space-y-4 p-3 sm:p-4">
+        <div className="overflow-hidden rounded-[1.35rem] border border-[#e6e0d6] bg-white">
+          {lines.map((line, index) => (
+            <div
+              key={line.id}
+              className={cn(
+                'flex items-center justify-between gap-3 px-3.5 py-2.5 sm:px-4',
+                index > 0 && 'border-t border-[#efe9df]',
+                line.tone === 'subtotal' && 'bg-[#f7f3ec]',
+                line.tone === 'hero' && 'bg-stone-950 text-white',
+              )}
+            >
+              <span className={cn(
+                'text-sm',
+                line.tone === 'hero' ? 'font-medium text-amber-100' : line.tone === 'subtotal' ? 'font-medium text-ink' : 'text-stone-500',
+              )}>
+                {line.label}
+              </span>
+              <span className={cn(
+                'text-right text-sm tabular-nums sm:text-[0.95rem]',
+                line.tone === 'hero' ? 'font-display text-lg font-semibold text-amber-200' : 'font-semibold text-ink',
+                line.tone !== 'hero' && line.amount < 0 && 'text-rose-700',
+                line.tone !== 'hero' && line.amount > 0 && (line.id === 'gross' || line.id === 'cash') && 'text-emerald-800',
+              )}>
+                {app.money(line.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
         {debts.length > 0 && (
-          <div className="rounded-2xl bg-white/50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">{t('cogsStepDebts')}</p>
-            <ul className="mt-2 space-y-2">
-              {debts.map((item, index) => (
-                <li key={item.id ?? `${item.customerName}-${index}`} className="space-y-1 text-sm">
-                  <span className="flex justify-between gap-3">
-                    <span>
-                      <span className="font-medium">{item.customerName}</span>
-                      {item.products ? <span className="mt-0.5 block text-xs text-stone-500">{item.products}</span> : null}
-                    </span>
-                    <span className="tabular-nums">{app.money(debtRemaining(item))}</span>
-                  </span>
-                  <span className="flex justify-between gap-3 text-xs text-stone-500">
-                    <span>{t('cogsDebtPaidAmount')} {app.money(debtPaid(item))}</span>
-                    <span>{debtStatus(item) === 'approved' ? t('cogsDebtPaid') : debtStatus(item) === 'pending' ? t('cogsDebtAwaiting') : t('cogsDebtUnpaid')}</span>
-                  </span>
-                </li>
-              ))}
+          <div className="overflow-hidden rounded-[1.35rem] border border-[#e6e0d6] bg-white p-3 sm:p-3.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-800">{t('cogsStepDebts')}</p>
+            <ul className="mt-3 space-y-2.5">
+              {debts.map((item, index) => {
+                const status = debtStatus(item)
+                const remaining = debtRemaining(item)
+                const paid = debtPaid(item)
+                const busy = Boolean(item.id && payBusy === item.id)
+                return (
+                  <li key={item.id ?? `${item.customerName}-${index}`} className="rounded-2xl border border-[#efe9df] bg-[#faf7f2] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="block font-medium text-ink">{item.customerName}</span>
+                        {item.products ? <span className="mt-0.5 block text-xs text-stone-500">{item.products}</span> : null}
+                        <span className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                          <span className="rounded-xl bg-white px-2.5 py-1.5 text-stone-500">
+                            {t('cogsDebtPaidAmount')}
+                            <span className="mt-0.5 block font-semibold tabular-nums text-ink">{app.money(paid)}</span>
+                          </span>
+                          <span className="rounded-xl bg-white px-2.5 py-1.5 text-stone-500">
+                            {t('cogsDebtRemaining')}
+                            <span className="mt-0.5 block font-semibold tabular-nums text-ink">{app.money(remaining)}</span>
+                          </span>
+                        </span>
+                        <span className={cn(
+                          'mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                          status === 'approved' ? 'bg-emerald-100 text-emerald-950' : status === 'pending' ? 'bg-amber-100 text-amber-950' : 'bg-stone-200 text-stone-700',
+                        )}>
+                          {status === 'approved' ? t('cogsDebtPaid') : status === 'pending' ? t('cogsDebtAwaiting') : t('cogsDebtUnpaid')}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 flex-col items-stretch gap-1.5">
+                        {canPay && remaining > 0 && (
+                          <Button size="sm" variant="gold" className="rounded-full px-3" onClick={() => setPaying(item)}>{t('cogsDebtPaid')}</Button>
+                        )}
+                        {asAdmin && paid > 0 && (
+                          <Button size="sm" variant="secondary" className="rounded-full px-3" onClick={() => setPaying(item)}>{t('edit')}</Button>
+                        )}
+                        {asAdmin && paid > 0 && status !== 'pending' && (
+                          <Button size="sm" variant="danger" className="rounded-full px-3" loading={busy} onClick={() => onRejectPayment?.(item)}>{t('cogsDebtMarkUnpaid')}</Button>
+                        )}
+                      </span>
+                    </div>
+                    {asAdmin && status === 'pending' && (
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Button size="sm" variant="danger" className="rounded-full" loading={busy} onClick={() => onRejectPayment?.(item)}>{t('cogsRejectPayment')}</Button>
+                        <Button size="sm" variant="gold" className="rounded-full" loading={busy} onClick={() => onApprovePayment?.(item)}>{t('cogsApprovePayment')}</Button>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}
-        <Button variant="gold" className="w-full" onClick={download}>{t('remainPdf')}</Button>
+        <Button variant="secondary" className="w-full rounded-2xl" onClick={download}>
+          <Download className="h-4 w-4" />
+          {t('remainPdf')}
+        </Button>
+        <DebtPayDialog
+          item={paying}
+          open={Boolean(paying)}
+          asAdmin={asAdmin}
+          onClose={() => setPaying(null)}
+          onConfirm={(paidAmount) => {
+            if (!paying) return
+            onPay?.(setDebtPayment(paying, paidAmount, asAdmin), paidAmount)
+          }}
+        />
       </div>
     </div>
   )

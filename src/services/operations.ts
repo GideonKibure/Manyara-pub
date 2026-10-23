@@ -2,7 +2,7 @@ import { snapshotFor } from '@/features/inventory/stock'
 import { overdueUnpaidBill, unpaidBillHeld } from '@/features/sales/holds'
 import { portionPrice, sizeCost } from '@/features/products/offer'
 import { latestPriceChange, nextPriceChangeDate, repriceDayCloses } from '@/features/products/priceHistory'
-import { applyDebtPaymentReview, approvePendingDebts, debtPaid, hasPendingDebtPayment } from '@/features/dayClose/debts'
+import { applyDebtPaymentReview, approvePendingDebts, debtPaid, hasPendingDebtPayment, setDebtPayment } from '@/features/dayClose/debts'
 import { syncStockAlerts } from '@/features/notifications/alerts'
 import { saleTotal } from '@/utils/labels'
 import {
@@ -1892,6 +1892,22 @@ export function reviewDebtPayment(db: Database, userId: string, closeId: string,
     ? `Approved debt payment from ${target.customerName} for ${current.day}.`
     : `Rejected debt payment from ${target.customerName} for ${current.day}.`
   return finish(audit({ ...db, dayCloses }, userId, approve ? 'debt.approve' : 'debt.reject', 'day_close', closeId, summary), approve ? 'Debt payment approved.' : 'Debt payment rejected.')
+}
+
+export function setDayCloseDebtPayment(db: Database, userId: string, closeId: string, debtId: string, paidAmount: number): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const current = (db.dayCloses ?? []).find((item) => item.id === closeId)
+  if (!current) return fail('COGS report not found.')
+  const target = current.debts.find((item) => item.id === debtId)
+  if (!target) return fail('Debt not found.')
+  const next = setDebtPayment(target, paidAmount, true)
+  const debts = current.debts.map((item) => (item.id === debtId ? next : item))
+  const dayCloses = (db.dayCloses ?? []).map((item) => (item.id === closeId ? { ...item, debts } : item))
+  const summary = debtPaid(next) > 0
+    ? `Updated debt payment from ${target.customerName} for ${current.day}.`
+    : `Marked debt from ${target.customerName} unpaid for ${current.day}.`
+  return finish(audit({ ...db, dayCloses }, userId, 'debt.set_payment', 'day_close', closeId, summary), debtPaid(next) > 0 ? 'Debt payment updated.' : 'Debt marked unpaid.')
 }
 
 export function markNotificationRead(db: Database, userId: string, notificationId: string): OpResult {

@@ -36,6 +36,7 @@ import {
   adminDeleteDayClose,
   adminApproveDayClose,
   reviewDebtPaymentRpc,
+  adminSetDebtPaymentRpc,
   adminApplyPriceChange,
   staffDirectory,
   submitActivity,
@@ -1149,6 +1150,12 @@ export async function reviewDebtPaymentRemote(closeId: string, debtId: string, a
   const result = await reviewDebtPaymentRpc(closeId, debtId, approve)
   if (result.error) return fail(errorText(result.error))
   return { ok: true, message: approve ? 'Debt payment approved.' : 'Debt payment rejected.' }
+}
+
+export async function setDayCloseDebtPaymentRemote(closeId: string, debtId: string, paidAmount: number): Promise<ActionResult> {
+  const result = await adminSetDebtPaymentRpc(closeId, debtId, paidAmount)
+  if (result.error) return fail(errorText(result.error))
+  return { ok: true, message: paidAmount > 0 ? 'Debt payment updated.' : 'Debt marked unpaid.' }
 }
 
 export async function applyPriceChangeRemote(input: {

@@ -1,4 +1,5 @@
 import { useEffect, useId, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useI18n } from '@/i18n/LanguageContext'
@@ -35,26 +36,32 @@ export function Modal({
   }, [open, onClose])
 
   if (!open) return null
-  return (
-    <div className={cn('fixed inset-0 z-[60] flex justify-center', centered ? 'items-center p-4 sm:p-6' : 'items-end p-0 sm:items-center sm:p-4')}>
-      <button className={cn('absolute inset-0', centered ? 'bg-stone-950/45 backdrop-blur-md' : 'bg-black/50')} aria-label={t('closeDialog')} onClick={onClose} />
+  return createPortal(
+    <div className={cn('fixed inset-0 z-[80] flex justify-center', centered ? 'items-center p-4 sm:p-6' : 'items-end p-0 sm:items-center sm:p-4')}>
+      <button className="absolute inset-0 bg-stone-950/55 backdrop-blur-xl" aria-label={t('closeDialog')} onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={cn('relative w-full overflow-y-auto bg-white shadow-2xl', centered ? 'max-h-[min(85dvh,40rem)] max-w-[min(28rem,calc(100vw-2rem))] rounded-3xl p-5' : `max-h-[92dvh] rounded-t-2xl p-4 sm:rounded-2xl sm:p-5 ${wide ? 'max-w-3xl' : 'max-w-lg'}`)}
+        className={cn(
+          'relative flex w-full flex-col overflow-hidden bg-[#faf7f2] shadow-[0_24px_64px_rgba(28,25,23,0.28)]',
+          centered
+            ? 'max-h-[min(85dvh,40rem)] max-w-[min(28rem,calc(100vw-2rem))] rounded-3xl'
+            : `max-h-[92dvh] rounded-t-2xl sm:rounded-2xl ${wide ? 'max-w-3xl' : 'max-w-lg'}`,
+        )}
       >
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <h2 id={titleId} className="text-xl font-semibold text-ink">
+        <div className="sticky top-0 z-30 flex shrink-0 items-start justify-between gap-4 border-b border-[#e6e0d6] bg-[#faf7f2] px-4 py-3.5 sm:px-5">
+          <h2 id={titleId} className="font-display text-lg leading-snug text-ink sm:text-xl">
             {title}
           </h2>
-          <button className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-stone-200 text-stone-600 hover:bg-stone-100" onClick={onClose} aria-label={t('close')}>
+          <button className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[#e6e0d6] bg-white text-stone-600 shadow-sm hover:bg-stone-50" onClick={onClose} aria-label={t('close')}>
             <X className="h-5 w-5" />
           </button>
         </div>
-        {children}
+        <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

@@ -4,9 +4,10 @@ import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import { formatDate } from '@/utils/dates'
 import { cogsTotals } from '@/features/dayClose/cogs'
+import { debtPaid, debtRemaining, debtStatus } from '@/features/dayClose/debts'
 import { downloadStyledPdf, type StyledReport } from '@/utils/pdf'
 import { cn } from '@/utils/cn'
-import type { Database, SalesTransaction } from '@/types'
+import type { Database, DayDebt, SalesTransaction } from '@/types'
 import { snapshotFor } from '@/features/inventory/stock'
 
 export interface SalesDayRow {
@@ -246,7 +247,7 @@ export function CogsSheet({
   rows: SalesDayRow[]
   day: string
   expenses: number
-  debts: Array<{ customerName: string; amount: number; products: string }>
+  debts: DayDebt[]
   mobile: number
   staff?: string
   approved?: boolean
@@ -292,11 +293,21 @@ export function CogsSheet({
         {
           title: t('cogsStepDebts'),
           columns: [
-            { header: t('cogsCustomer'), width: 0.4 },
-            { header: t('cogsDebtProducts'), width: 0.35 },
-            { header: t('cogsDebtAmount'), width: 0.25, align: 'right' },
+            { header: t('cogsCustomer'), width: 0.28 },
+            { header: t('cogsDebtAmount'), width: 0.18, align: 'right' },
+            { header: t('cogsDebtPaidAmount'), width: 0.18, align: 'right' },
+            { header: t('cogsDebtRemaining'), width: 0.18, align: 'right' },
+            { header: t('labelStatus'), width: 0.18 },
           ],
-          rows: debts.length ? debts.map((item) => [item.customerName, item.products || '—', app.money(item.amount)]) : [['—', t('cogsNoDebts'), app.money(0)]],
+          rows: debts.length
+            ? debts.map((item) => [
+              item.customerName,
+              app.money(item.amount),
+              app.money(debtPaid(item)),
+              app.money(debtRemaining(item)),
+              debtStatus(item) === 'approved' ? t('cogsDebtPaid') : debtStatus(item) === 'pending' ? t('cogsDebtAwaiting') : t('cogsDebtUnpaid'),
+            ])
+            : [['—', app.money(0), app.money(0), app.money(0), t('cogsNoDebts')]],
         },
         {
           title: t('cogsSheetTitle'),
@@ -345,12 +356,18 @@ export function CogsSheet({
             <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">{t('cogsStepDebts')}</p>
             <ul className="mt-2 space-y-2">
               {debts.map((item, index) => (
-                <li key={`${item.customerName}-${index}`} className="flex justify-between gap-3 text-sm">
-                  <span>
-                    <span className="font-medium">{item.customerName}</span>
-                    {item.products ? <span className="mt-0.5 block text-xs text-stone-500">{item.products}</span> : null}
+                <li key={item.id ?? `${item.customerName}-${index}`} className="space-y-1 text-sm">
+                  <span className="flex justify-between gap-3">
+                    <span>
+                      <span className="font-medium">{item.customerName}</span>
+                      {item.products ? <span className="mt-0.5 block text-xs text-stone-500">{item.products}</span> : null}
+                    </span>
+                    <span className="tabular-nums">{app.money(debtRemaining(item))}</span>
                   </span>
-                  <span className="tabular-nums">{app.money(item.amount)}</span>
+                  <span className="flex justify-between gap-3 text-xs text-stone-500">
+                    <span>{t('cogsDebtPaidAmount')} {app.money(debtPaid(item))}</span>
+                    <span>{debtStatus(item) === 'approved' ? t('cogsDebtPaid') : debtStatus(item) === 'pending' ? t('cogsDebtAwaiting') : t('cogsDebtUnpaid')}</span>
+                  </span>
                 </li>
               ))}
             </ul>

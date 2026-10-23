@@ -1,5 +1,7 @@
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, TextInput } from '@/components/ui/Fields'
+import { DebtCard } from '@/features/dayClose/DebtCard'
+import { blankDebt, debtOutstanding } from '@/features/dayClose/debts'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { CogsExpenseLine, CogsLine, DayDebt } from '@/types'
 import { useApp } from '@/context/AppContext'
@@ -14,6 +16,7 @@ export function CogsEditor({
   onDebts,
   mobile,
   onMobile,
+  asAdmin = false,
 }: {
   lines: CogsLine[]
   onLines: (next: CogsLine[]) => void
@@ -23,6 +26,7 @@ export function CogsEditor({
   onDebts: (next: DayDebt[]) => void
   mobile: number | null
   onMobile: (next: number | null) => void
+  asAdmin?: boolean
 }) {
   const app = useApp()
   const { t } = useI18n()
@@ -52,45 +56,25 @@ export function CogsEditor({
             <Button size="sm" variant="danger" onClick={() => onExpenses(expenses.filter((_, i) => i !== index))}>{t('deleteRecord')}</Button>
           </div>
         ))}
-        <AddExpense onAdd={(item) => onExpenses([...expenses, item])} />
+        <Button variant="secondary" onClick={() => onExpenses([...expenses, { id: uid(), description: '', amount: 0, notes: '' }])}>{t('pageAddExpense')}</Button>
       </section>
-      <section className="space-y-2">
+      <section className="space-y-3">
         <h3 className="text-sm font-semibold">{t('cogsStepDebts')}</h3>
         {debts.map((item, index) => (
-          <div key={item.id ?? `debt-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_8rem_1fr_auto]">
-            <TextInput value={item.customerName} placeholder={t('cogsCustomer')} autoComplete="name" onChange={(event) => onDebts(debts.map((row) => (row.id === item.id ? { ...row, customerName: event.target.value } : row)))} />
-            <NumberInput value={item.amount} onValueChange={(value) => onDebts(debts.map((row) => (row.id === item.id ? { ...row, amount: value ?? 0 } : row)))} />
-            <TextInput value={item.products} placeholder={t('cogsDebtProducts')} onChange={(event) => onDebts(debts.map((row) => (row.id === item.id ? { ...row, products: event.target.value } : row)))} />
-            <Button size="sm" variant="danger" onClick={() => onDebts(debts.filter((row) => row.id !== item.id))}>{t('deleteRecord')}</Button>
-          </div>
+          <DebtCard
+            key={item.id ?? `debt-${index}`}
+            item={item}
+            asAdmin={asAdmin}
+            onChange={(next) => onDebts(debts.map((row) => (row.id === item.id ? next : row)))}
+            onRemove={() => onDebts(debts.filter((row) => row.id !== item.id))}
+          />
         ))}
-        <AddDebt onAdd={(item) => onDebts([...debts, item])} />
+        <Button variant="secondary" className="w-full sm:w-auto" onClick={() => onDebts([...debts, blankDebt()])}>{t('cogsAddDebt')}</Button>
       </section>
       <Field label={t('cogsMobileAmount')}>
         <NumberInput value={mobile} onValueChange={onMobile} />
       </Field>
-      <p className="text-sm text-stone-500">{t('cogsCollections')} · {app.money(lines.reduce((sum, line) => sum + line.amount, 0) - debts.reduce((sum, item) => sum + item.amount, 0))}</p>
+      <p className="text-sm text-stone-500">{t('cogsCollections')} · {app.money(lines.reduce((sum, line) => sum + line.amount, 0) - debts.reduce((sum, item) => sum + debtOutstanding(item), 0))}</p>
     </div>
-  )
-}
-
-function AddExpense({ onAdd }: { onAdd: (item: CogsExpenseLine) => void }) {
-  const { t } = useI18n()
-  return (
-    <Button
-      variant="secondary"
-      onClick={() => onAdd({ id: uid(), description: '', amount: 0, notes: '' })}
-    >
-      {t('pageAddExpense')}
-    </Button>
-  )
-}
-
-function AddDebt({ onAdd }: { onAdd: (item: DayDebt) => void }) {
-  const { t } = useI18n()
-  return (
-    <Button variant="secondary" onClick={() => onAdd({ id: uid(), customerName: '', amount: 0, products: '' })}>
-      {t('cogsAddDebt')}
-    </Button>
   )
 }

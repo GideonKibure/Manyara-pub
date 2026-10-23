@@ -53,6 +53,7 @@ import {
   updateDayCloseRemote,
   deleteDayCloseRemote,
   approveDayCloseRemote,
+  reviewDebtPaymentRemote,
   applyPriceChangeRemote,
   updatePasswordRemote,
   withdrawRemote,
@@ -105,6 +106,7 @@ import {
   updateDayClose,
   deleteDayClose,
   approveDayClose,
+  reviewDebtPayment,
   updateOwnProfile,
   applyPriceChange,
   updateProduct,
@@ -222,6 +224,7 @@ interface AppContextValue {
   }) => Promise<ActionResult>
   deleteDayClose: (id: string) => Promise<ActionResult>
   approveDayClose: (id: string) => Promise<ActionResult>
+  reviewDebtPayment: (closeId: string, debtId: string, approve: boolean) => Promise<ActionResult>
   acceptStockIn: (id: string) => Promise<ActionResult>
   declineStockIn: (id: string, reason: string) => Promise<ActionResult>
   acceptSale: (id: string) => Promise<ActionResult>
@@ -762,6 +765,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateDayClose: async (id, input) => (remote ? runRemote(() => updateDayCloseRemote(id, input)) : run((database, userId) => updateDayClose(database, userId, id, input))),
     deleteDayClose: async (id) => (remote ? runRemote(() => deleteDayCloseRemote(id)) : run((database, userId) => deleteDayClose(database, userId, id))),
     approveDayClose: async (id) => (remote ? runRemote(() => approveDayCloseRemote(id)) : run((database, userId) => approveDayClose(database, userId, id))),
+    reviewDebtPayment: async (closeId, debtId, approve) => (remote ? runRemote(() => reviewDebtPaymentRemote(closeId, debtId, approve)) : run((database, userId) => reviewDebtPayment(database, userId, closeId, debtId, approve))),
     acceptStockIn: async (id) => (remote ? runRemote(() => acceptStockInRemote(id)) : run((database, userId) => approveStockIn(database, userId, id))),
     declineStockIn: async (id, reason) => (remote ? runRemote(() => declineStockInRemote(id, reason)) : run((database, userId) => rejectStockIn(database, userId, id, reason))),
     acceptSale: async (id) => (remote ? runRemote(() => acceptSaleRemote(id)) : run((database, userId) => approveSale(database, userId, id))),

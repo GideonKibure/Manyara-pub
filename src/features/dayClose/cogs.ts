@@ -1,4 +1,5 @@
 import type { DayDebt } from '@/types'
+import { debtOutstanding } from '@/features/dayClose/debts'
 
 export interface CogsTotals {
   sales: number
@@ -16,7 +17,7 @@ export function cogsTotals(rows: Array<{ amount: number; profit: number }>, expe
   const sales = rows.reduce((sum, row) => sum + row.amount, 0)
   const cogs = rows.reduce((sum, row) => sum + (row.amount - row.profit), 0)
   const gross = sales - cogs
-  const debtTotal = debts.reduce((sum, row) => sum + row.amount, 0)
+  const debtTotal = debts.reduce((sum, row) => sum + debtOutstanding(row), 0)
   const collections = sales - debtTotal
   const cash = collections - mobile
   return { sales, cogs, gross, expenses, debtTotal, collections, mobile, cash, net: gross - expenses }

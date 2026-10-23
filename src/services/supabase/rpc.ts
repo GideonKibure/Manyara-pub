@@ -116,6 +116,11 @@ export async function adminApproveDayClose(id: string) {
   return client.rpc('admin_approve_day_close', { p_id: id })
 }
 
+export async function reviewDebtPaymentRpc(closeId: string, debtId: string, approve: boolean) {
+  const client = await requireClient()
+  return client.rpc('review_debt_payment', { p_close_id: closeId, p_debt_id: debtId, p_approve: approve })
+}
+
 export async function adminApplyPriceChange(productId: string, day: string, cost: number, selling: number) {
   const client = await requireClient()
   return client.rpc('admin_apply_price_change', { p_product: productId, p_day: day, p_cost: cost, p_selling: selling })

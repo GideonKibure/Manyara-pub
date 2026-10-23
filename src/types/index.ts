@@ -249,11 +249,16 @@ export interface BusinessSettings {
 
 export type RecordDeleteKind = 'stock_in' | 'sale' | 'expense'
 
+export type DebtPaymentStatus = 'unpaid' | 'pending' | 'approved'
+
 export interface DayDebt {
   id?: string
   customerName: string
   amount: number
   products: string
+  paidAmount?: number
+  paymentStatus?: DebtPaymentStatus
+  paidApprovedAmount?: number
 }
 
 export interface CogsLine {

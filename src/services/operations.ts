@@ -2,6 +2,7 @@ import { snapshotFor } from '@/features/inventory/stock'
 import { overdueUnpaidBill, unpaidBillHeld } from '@/features/sales/holds'
 import { portionPrice, sizeCost } from '@/features/products/offer'
 import { latestPriceChange, nextPriceChangeDate, repriceDayCloses } from '@/features/products/priceHistory'
+import { applyDebtPaymentReview, approvePendingDebts, debtPaid, hasPendingDebtPayment } from '@/features/dayClose/debts'
 import { syncStockAlerts } from '@/features/notifications/alerts'
 import { saleTotal } from '@/utils/labels'
 import {
@@ -1697,14 +1698,35 @@ export function deleteBusinessRecord(db: Database, userId: string, kind: RecordD
   return finish(audit({ ...db, expenses }, userId, 'expense.delete', 'expense', id, `Deleted expense ${record.code}.`), `${record.code} deleted.`)
 }
 
-function cleanDebts(items: DayDebt[]) {
+function cleanDebts(items: DayDebt[], asAdmin = false) {
   return items
-    .map((item) => ({
-      id: item.id,
-      customerName: item.customerName.trim(),
-      amount: Math.max(0, Math.floor(item.amount || 0)),
-      products: item.products.trim(),
-    }))
+    .map((item) => {
+      const amount = Math.max(0, Math.floor(item.amount || 0))
+      const paidAmount = Math.min(amount, Math.max(0, Math.floor(item.paidAmount || 0)))
+      let paymentStatus = item.paymentStatus
+      let paidApprovedAmount = item.paidApprovedAmount
+      if (paidAmount <= 0) {
+        paymentStatus = 'unpaid'
+        paidApprovedAmount = undefined
+      } else if (asAdmin && paymentStatus !== 'pending') {
+        paymentStatus = 'approved'
+        paidApprovedAmount = paidAmount
+      } else if (paymentStatus === 'approved' && paidAmount === (item.paidApprovedAmount ?? paidAmount)) {
+        paymentStatus = 'approved'
+        paidApprovedAmount = paidAmount
+      } else {
+        paymentStatus = 'pending'
+      }
+      return {
+        id: item.id || uid(),
+        customerName: item.customerName.trim(),
+        amount,
+        products: item.products.trim(),
+        paidAmount,
+        paymentStatus,
+        paidApprovedAmount,
+      }
+    })
     .filter((item) => item.customerName.length >= 2 && item.amount >= 1)
 }
 
@@ -1764,12 +1786,13 @@ export function saveDayClose(
   const existing = (db.dayCloses ?? []).find((item) => item.day === day && item.submittedBy === owner)
   if (existing?.status === 'approved' && actor.profile.role !== 'admin') return fail('This COGS report is already approved.')
   const expenseItems = cleanExpenseItems(input.expenseItems)
+  const debts = cleanDebts(input.debts, actor.profile.role === 'admin')
   const record: DayClose = {
     id: existing?.id ?? uid(),
     day,
     submittedBy: owner,
     remainingSaleId: input.remainingSaleId,
-    debts: cleanDebts(input.debts),
+    debts,
     lines: cleanLines(input.lines),
     expenseItems,
     mobileReceived: Math.max(0, Math.floor(input.mobileReceived || 0)),
@@ -1785,6 +1808,14 @@ export function saveDayClose(
     message: `${actor.profile.fullName} saved a COGS report for ${day}.`,
     href: '/admin/remaining',
   })
+  if (debts.some(hasPendingDebtPayment)) {
+    next = notifyAdmins(next, {
+      type: 'submission_pending',
+      title: `Debt payment · ${day}`,
+      message: `${actor.profile.fullName} submitted a debt payment for ${day}. Approve it on the COGS calendar.`,
+      href: '/admin/remaining',
+    })
+  }
   return finish(next, 'COGS close saved.', { id: record.id })
 }
 
@@ -1807,7 +1838,7 @@ export function updateDayClose(
     item.id === id
       ? {
           ...item,
-          debts: cleanDebts(input.debts),
+          debts: cleanDebts(input.debts, isAdmin),
           lines: cleanLines(input.lines ?? item.lines),
           expenseItems,
           mobileReceived: Math.max(0, Math.floor(input.mobileReceived || 0)),
@@ -1840,9 +1871,27 @@ export function approveDayClose(db: Database, userId: string, id: string): OpRes
   if (!current) return fail('COGS report not found.')
   const stamped = now()
   const dayCloses = (db.dayCloses ?? []).map((item) =>
-    item.id === id ? { ...item, status: 'approved' as const, reviewedBy: userId, reviewedAt: stamped } : item,
+    item.id === id
+      ? { ...item, debts: approvePendingDebts(item.debts), status: 'approved' as const, reviewedBy: userId, reviewedAt: stamped }
+      : item,
   )
   return finish(audit({ ...db, dayCloses }, userId, 'day_close.approve', 'day_close', id, `Approved COGS report for ${current.day}.`), 'COGS report approved.')
+}
+
+export function reviewDebtPayment(db: Database, userId: string, closeId: string, debtId: string, approve: boolean): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const current = (db.dayCloses ?? []).find((item) => item.id === closeId)
+  if (!current) return fail('COGS report not found.')
+  const target = current.debts.find((item) => item.id === debtId)
+  if (!target) return fail('Debt not found.')
+  if (approve && debtPaid(target) < 1) return fail('This debt has no payment to approve.')
+  const debts = current.debts.map((item) => (item.id === debtId ? applyDebtPaymentReview(item, approve) : item))
+  const dayCloses = (db.dayCloses ?? []).map((item) => (item.id === closeId ? { ...item, debts } : item))
+  const summary = approve
+    ? `Approved debt payment from ${target.customerName} for ${current.day}.`
+    : `Rejected debt payment from ${target.customerName} for ${current.day}.`
+  return finish(audit({ ...db, dayCloses }, userId, approve ? 'debt.approve' : 'debt.reject', 'day_close', closeId, summary), approve ? 'Debt payment approved.' : 'Debt payment rejected.')
 }
 
 export function markNotificationRead(db: Database, userId: string, notificationId: string): OpResult {

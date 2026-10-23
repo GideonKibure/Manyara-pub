@@ -6,6 +6,8 @@ import { Field, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
 import { CogsEditor } from '@/features/dayClose/CogsEditor'
+import { DebtCard } from '@/features/dayClose/DebtCard'
+import { hasPendingDebtPayment } from '@/features/dayClose/debts'
 import { CogsSheet, reportFromCount } from '@/features/reports/SalesDayReport'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
@@ -47,6 +49,7 @@ export function CogsPage() {
   const [debts, setDebts] = useState<DayDebt[]>([])
   const [mobile, setMobile] = useState<number | null>(0)
   const [busy, setBusy] = useState(false)
+  const [reviewingDebt, setReviewingDebt] = useState('')
   const [removing, setRemoving] = useState('')
   const [adding, setAdding] = useState(false)
   const [addDay, setAddDay] = useState(dateKey())
@@ -112,6 +115,7 @@ export function CogsPage() {
           const reports = closesByDay.get(cell.key) ?? []
           const ready = reports.length > 0
           const approved = reports.some((item) => item.status === 'approved')
+          const pendingPay = reports.some((item) => item.debts.some(hasPendingDebtPayment))
           return (
             <button
               key={cell.key}
@@ -127,12 +131,13 @@ export function CogsPage() {
                   ? 'glass-panel hover:-translate-y-0.5 hover:shadow-lg'
                   : 'border border-dashed border-white/50 bg-white/20 text-stone-400',
                 selected === cell.key && ready && 'ring-2 ring-amber-600',
-                approved && 'bg-emerald-50/70',
+                approved && !pendingPay && 'bg-emerald-50/70',
+                pendingPay && 'bg-amber-50/90',
               )}
             >
               <span className={cn('font-display text-xl leading-none sm:text-3xl', ready ? 'text-ink' : 'text-stone-400')}>{cell.day}</span>
               <span className={cn('mt-1 text-[10px] font-bold tracking-[0.18em]', ready ? 'text-amber-800' : 'text-stone-400')}>{monthWord(cell.key)}</span>
-              {ready && <span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-700" />}
+              {ready && <span className={cn('mt-1 h-1.5 w-1.5 rounded-full', pendingPay ? 'bg-amber-600' : 'bg-amber-700')} />}
             </button>
           )
         })}
@@ -157,6 +162,31 @@ export function CogsPage() {
                   <StaffCell id={item.submittedBy} />
                   <StatusBadge status={item.status} />
                 </div>
+                {item.debts.some(hasPendingDebtPayment) && (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-amber-900">{t('cogsPendingPayments')}</p>
+                    {item.debts.filter(hasPendingDebtPayment).map((debt) => (
+                      <DebtCard
+                        key={debt.id ?? debt.customerName}
+                        item={debt}
+                        review
+                        busy={reviewingDebt === `${item.id}:${debt.id}`}
+                        onApprove={async () => {
+                          if (!debt.id) return
+                          setReviewingDebt(`${item.id}:${debt.id}`)
+                          await app.reviewDebtPayment(item.id, debt.id, true)
+                          setReviewingDebt('')
+                        }}
+                        onReject={async () => {
+                          if (!debt.id) return
+                          setReviewingDebt(`${item.id}:${debt.id}`)
+                          await app.reviewDebtPayment(item.id, debt.id, false)
+                          setReviewingDebt('')
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
                 <CogsSheet
                   rows={rows}
                   day={item.day}
@@ -192,6 +222,7 @@ export function CogsPage() {
           <div className="space-y-4">
             <StaffCell id={editing.submittedBy} />
             <CogsEditor
+              asAdmin
               lines={lines}
               onLines={setLines}
               expenses={expenseItems}
@@ -201,10 +232,11 @@ export function CogsPage() {
               mobile={mobile}
               onMobile={setMobile}
             />
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setEditing(null)}>{t('cancel')}</Button>
+            <div className="cogs-dock-inner grid-cols-2 sm:ml-auto sm:max-w-md">
+              <Button variant="secondary" className="cogs-dock-btn cogs-dock-btn-back" onClick={() => setEditing(null)}>{t('cancel')}</Button>
               <Button
                 variant="gold"
+                className="cogs-dock-btn cogs-dock-btn-save"
                 loading={busy}
                 onClick={async () => {
                   setBusy(true)
@@ -232,6 +264,7 @@ export function CogsPage() {
             <TextInput type="date" max={dateKey()} value={addDay} onChange={(event) => setAddDay(event.target.value)} />
           </Field>
           <CogsEditor
+            asAdmin
             lines={lines}
             onLines={setLines}
             expenses={expenseItems}
@@ -241,10 +274,11 @@ export function CogsPage() {
             mobile={mobile}
             onMobile={setMobile}
           />
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setAdding(false)}>{t('cancel')}</Button>
+          <div className="cogs-dock-inner grid-cols-2 sm:ml-auto sm:max-w-md">
+            <Button variant="secondary" className="cogs-dock-btn cogs-dock-btn-back" onClick={() => setAdding(false)}>{t('cancel')}</Button>
             <Button
               variant="gold"
+              className="cogs-dock-btn cogs-dock-btn-save"
               loading={busy}
               onClick={async () => {
                 setBusy(true)

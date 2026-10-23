@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronLeft, ClipboardCheck, Package, Pencil, Search, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Package, Pencil, Save, Search, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
 import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, TextArea, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
 import { CogsEditor } from '@/features/dayClose/CogsEditor'
+import { DebtCard } from '@/features/dayClose/DebtCard'
+import { blankDebt } from '@/features/dayClose/debts'
 import { snapshotFor } from '@/features/inventory/stock'
 import { CogsSheet, type SalesDayRow } from '@/features/reports/SalesDayReport'
 import { useApp } from '@/context/AppContext'
@@ -285,7 +287,7 @@ export function RemainingStockPage() {
   const prevStep = (from: Step) => steps[Math.max(steps.indexOf(from) - 1, 0)]
 
   return (
-    <div className="employee-dash remaining-close relative -mx-3 -mt-4 min-h-[calc(100dvh-4.5rem)] px-3 pb-44 pt-5 sm:-mx-4 sm:-mt-6 sm:px-4 sm:pt-6 md:-mx-8 md:-mb-8 md:px-8 md:pb-12">
+    <div className="employee-dash remaining-close relative -mx-3 -mt-4 min-h-[calc(100dvh-4.5rem)] px-3 pb-[calc(8.5rem+env(safe-area-inset-bottom))] pt-5 sm:-mx-4 sm:-mt-6 sm:px-4 sm:pt-6 md:-mx-8 md:-mb-8 md:px-8 md:pb-28">
       <div className="mx-auto w-full max-w-5xl space-y-4">
         <PageHeader title={t('remainTitle')} description={t('remainBody')} />
         <div className="flex flex-wrap items-center gap-2">
@@ -426,15 +428,18 @@ export function RemainingStockPage() {
           <Panel className="space-y-4">
             <h2 className="font-semibold">{t('cogsDebtsTitle')}</h2>
             <p className="text-sm text-stone-600">{t('cogsDebtsBody')}</p>
-            {debts.map((item, index) => (
-              <div key={item.id ?? `debt-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_8rem_1fr_auto]">
-                <TextInput value={item.customerName} disabled={locked} placeholder={t('cogsCustomer')} autoComplete="name" onChange={(event) => setDebts((current) => current.map((row) => (row.id === item.id ? { ...row, customerName: event.target.value } : row)))} />
-                <NumberInput value={item.amount} disabled={locked} onValueChange={(value) => setDebts((current) => current.map((row) => (row.id === item.id ? { ...row, amount: value ?? 0 } : row)))} />
-                <TextInput value={item.products} disabled={locked} placeholder={t('cogsDebtProducts')} onChange={(event) => setDebts((current) => current.map((row) => (row.id === item.id ? { ...row, products: event.target.value } : row)))} />
-                <Button size="sm" variant="danger" disabled={locked} onClick={() => setDebts((current) => current.filter((row) => row.id !== item.id))}>{t('deleteRecord')}</Button>
-              </div>
-            ))}
-            <Button variant="secondary" disabled={locked} onClick={() => setDebts((current) => [...current, { id: uid(), customerName: '', amount: 0, products: '' }])}>{t('cogsAddDebt')}</Button>
+            <div className="grid gap-3">
+              {debts.map((item, index) => (
+                <DebtCard
+                  key={item.id ?? `debt-${index}`}
+                  item={item}
+                  locked={locked}
+                  onChange={(next) => setDebts((current) => current.map((row) => (row.id === item.id ? next : row)))}
+                  onRemove={() => setDebts((current) => current.filter((row) => row.id !== item.id))}
+                />
+              ))}
+            </div>
+            <Button variant="secondary" className="w-full sm:w-auto" disabled={locked} onClick={() => setDebts((current) => [...current, blankDebt()])}>{t('cogsAddDebt')}</Button>
           </Panel>
         )}
 
@@ -497,28 +502,41 @@ export function RemainingStockPage() {
       </div>
 
       {allowed && !locked && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-[4.25rem] z-40 px-3 sm:px-4 md:bottom-4 md:px-8">
-          <div className="pointer-events-auto mx-auto flex w-full max-w-5xl gap-2 rounded-[1.4rem] border border-white/70 bg-stone-950/92 p-2 shadow-2xl backdrop-blur">
+        <div className="cogs-dock">
+          <div
+            className={cn(
+              'cogs-dock-inner pointer-events-auto mx-auto w-full max-w-5xl rounded-[1.55rem] border border-white/55 bg-stone-950/90 p-1.5 shadow-[0_18px_40px_rgba(28,25,23,0.28)] backdrop-blur-xl sm:p-2',
+              step === 'count' || step === 'sheet' ? 'grid-cols-2' : 'grid-cols-3',
+            )}
+          >
             {step !== 'count' && (
-              <Button variant="secondary" className="rounded-xl bg-white" onClick={() => setStep(prevStep(step))}>
-                <ChevronLeft className="h-4 w-4" />
-                {t('cogsBack')}
+              <Button variant="secondary" className="cogs-dock-btn cogs-dock-btn-back bg-white/95" onClick={() => setStep(prevStep(step))}>
+                <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+                <span className="truncate">{t('cogsBack')}</span>
               </Button>
             )}
-            <Button variant="gold" className="min-w-0 flex-1 rounded-xl" loading={busy} disabled={blocked || !filled.length} onClick={() => void persist()}>
-              {t('save')}
+            <Button
+              variant="gold"
+              className="cogs-dock-btn cogs-dock-btn-save"
+              loading={busy}
+              disabled={blocked || !filled.length}
+              onClick={() => void persist()}
+            >
+              <Save className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="truncate">{t('save')}</span>
             </Button>
             {step !== 'sheet' && (
               <Button
                 variant="secondary"
-                className="rounded-xl bg-white"
+                className="cogs-dock-btn cogs-dock-btn-next bg-white/95"
                 disabled={step === 'count' && (blocked || !filled.length)}
                 onClick={() => {
                   if (step === 'count') setLines(countedRows)
                   setStep(nextStep(step))
                 }}
               >
-                {t('cogsNext')}
+                <span className="truncate">{t('cogsNext')}</span>
+                <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
               </Button>
             )}
           </div>

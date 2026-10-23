@@ -35,6 +35,7 @@ import {
   adminUpdateDayClose,
   adminDeleteDayClose,
   adminApproveDayClose,
+  reviewDebtPaymentRpc,
   adminApplyPriceChange,
   staffDirectory,
   submitActivity,
@@ -153,7 +154,19 @@ function mapDebts(value: unknown): DayDebt[] {
     const customerName = str(row, 'customerName') || str(row, 'customer_name')
     const amount = num(row, 'amount')
     if (customerName.length < 2 || amount < 1) return []
-    return [{ id: str(row, 'id') || undefined, customerName, amount, products: str(row, 'products') }]
+    const paidAmount = num(row, 'paidAmount') || num(row, 'paid_amount')
+    const paymentStatusRaw = str(row, 'paymentStatus') || str(row, 'payment_status')
+    const paymentStatus = paymentStatusRaw === 'approved' || paymentStatusRaw === 'pending' || paymentStatusRaw === 'unpaid' ? paymentStatusRaw : paidAmount > 0 ? 'pending' : 'unpaid'
+    const paidApprovedAmount = num(row, 'paidApprovedAmount') || num(row, 'paid_approved_amount')
+    return [{
+      id: str(row, 'id') || undefined,
+      customerName,
+      amount,
+      products: str(row, 'products'),
+      paidAmount,
+      paymentStatus,
+      paidApprovedAmount: paidApprovedAmount || undefined,
+    }]
   })
 }
 
@@ -1130,6 +1143,12 @@ export async function approveDayCloseRemote(id: string): Promise<ActionResult> {
   const result = await adminApproveDayClose(id)
   if (result.error) return fail(errorText(result.error))
   return { ok: true, message: 'COGS report approved.' }
+}
+
+export async function reviewDebtPaymentRemote(closeId: string, debtId: string, approve: boolean): Promise<ActionResult> {
+  const result = await reviewDebtPaymentRpc(closeId, debtId, approve)
+  if (result.error) return fail(errorText(result.error))
+  return { ok: true, message: approve ? 'Debt payment approved.' : 'Debt payment rejected.' }
 }
 
 export async function applyPriceChangeRemote(input: {

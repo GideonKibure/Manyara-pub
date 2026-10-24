@@ -809,7 +809,7 @@ export function submitSale(db: Database, userId: string, draft: SaleDraft): OpRe
   if (wroteBill && (customerName.length < 2 || customerName.length > 80)) return fail('Enter the customer name.')
   if (wroteBill && draft.paymentStatus !== 'paid' && draft.paymentStatus !== 'unpaid') return fail('Mark the bill paid or unpaid.')
   if (!wroteBill && draft.paymentStatus !== 'paid') return fail('A sale can be recorded only when it is paid.')
-  if (actor.profile.role !== 'admin' && db.settings.allowRemainingCount && recordKind === 'sale') {
+  if (actor.profile.role !== 'admin' && db.settings.allowRemainingCount && recordKind === 'sale' && !wroteBill) {
     return fail('Sales are taken from remaining stock while that mode is on. Use Remaining stock.')
   }
   if ((draft.notes ?? '').trim().length > 400) return fail('Notes are too long.')

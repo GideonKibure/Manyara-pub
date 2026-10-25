@@ -1,4 +1,4 @@
-import { snapshotFor } from '@/features/inventory/stock'
+import { snapshotFor, stockQtyFromReceived } from '@/features/inventory/stock'
 import { overdueUnpaidBill, unpaidBillHeld } from '@/features/sales/holds'
 import { portionPrice, sizeCost } from '@/features/products/offer'
 import { latestPriceChange, nextPriceChangeDate, repriceDayCloses } from '@/features/products/priceHistory'
@@ -27,6 +27,7 @@ import type {
   DayDebt,
   CogsExpenseLine,
   CogsLine,
+  CogsMobileItem,
   EmployeeDraft,
   EmployeePatch,
   ExpenseDraft,
@@ -36,16 +37,33 @@ import type {
   ProductPriceChange,
   Profile,
   RecordDeleteKind,
+  RestockOrder,
+  RestockOrderDraft,
+  RestockOrderItem,
+  RestockOrderStatus,
   SaleDraft,
   SaleSize,
   SalesItem,
   SalesTransaction,
   StockInDraft,
+  StockInItem,
   StockInTransaction,
 } from '@/types'
-import { dateKey, isEmployeeAllowedDay } from '@/utils/dates'
+import { asDateKey, dateKey, isEmployeeAllowedDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { allocateInvoiceRef } from '@/utils/invoice'
+import { roundBuyingPrice } from '@/utils/money'
+
+function pricedStockIn(cost: number, stockQuantity: number) {
+  const costPerStockUnit = roundBuyingPrice(cost)
+  return { costPerStockUnit, totalCost: Math.round(costPerStockUnit * stockQuantity) }
+}
+
+function employeeDayOk(db: Database, day: string, extra?: string) {
+  return isEmployeeAllowedDay(day, extra, db.settings.recordLookbackDays)
+}
+
+const RECORD_WINDOW_FAIL = 'You can only record within the days allowed by the administrator.'
 
 export type OpResult =
   | { ok: true; db: Database; message?: string; meta?: Record<string, string> }
@@ -112,6 +130,27 @@ function productName(db: Database, productId: string) {
   return db.products.find((product) => product.id === productId)?.name ?? 'that product'
 }
 
+function applyCogsDebtPayment(db: Database, ownerId: string, day: string, customerName: string, extraPaid: number, asAdmin: boolean): Database {
+  const key = asDateKey(day)
+  const name = customerName.trim().toLowerCase()
+  if (!key || !name || extraPaid < 1) return db
+  const close = (db.dayCloses ?? []).find((item) => item.day === key && item.submittedBy === ownerId)
+  if (!close) return db
+  let matched = false
+  const debts = close.debts.map((item) => {
+    if (matched || item.customerName.trim().toLowerCase() !== name) return item
+    const leftover = Math.max(0, Math.floor(item.amount || 0) - debtPaid(item))
+    if (leftover <= 0) return item
+    matched = true
+    return setDebtPayment(item, debtPaid(item) + extraPaid, asAdmin)
+  })
+  if (!matched) return db
+  return {
+    ...db,
+    dayCloses: (db.dayCloses ?? []).map((item) => (item.id === close.id ? { ...item, debts } : item)),
+  }
+}
+
 function replaceProfile(db: Database, profile: Profile): Database {
   return { ...db, profiles: db.profiles.map((item) => (item.id === profile.id ? profile : item)) }
 }
@@ -166,7 +205,7 @@ export function changePassword(db: Database, userId: string, current: string, pa
   const account = db.accounts.find((item) => item.profileId === userId)
   if (!account || account.password !== current) return fail('The current password is incorrect.')
   const accounts = db.accounts.map((item) => (item.profileId === userId ? { ...item, password } : item))
-  return finish(audit({ ...db, accounts }, userId, 'auth.password', 'profile', userId, 'Password changed.'), 'Password updated.')
+  return finish(audit({ ...db, accounts }, userId, 'auth.password', 'profile', userId, 'Password changed.'), 'Password updated. Sign in with the new password.')
 }
 
 export function updateOwnProfile(db: Database, userId: string, input: { fullName: string; phone: string; imageUrl?: string }): OpResult {
@@ -291,10 +330,10 @@ export function createProduct(db: Database, userId: string, input: ProductDraft)
     stockUnitId: parsed.data.stockUnitId,
     receiveUnitId: parsed.data.receiveUnitId,
     conversionFactor: parsed.data.conversionFactor,
-    costPrice: parsed.data.costPrice,
+    costPrice: roundBuyingPrice(parsed.data.costPrice),
     sellingPrice: parsed.data.sellingPrice,
     sizeMode: parsed.data.sizeMode,
-    sizes: parsed.data.sizes,
+    sizes: parsed.data.sizes.map((size) => ({ ...size, cost: roundBuyingPrice(size.cost) })),
     cupPrice: parsed.data.cupPrice,
     halfPrice: parsed.data.halfPrice,
     minStock: parsed.data.minStock,
@@ -331,10 +370,10 @@ export function updateProduct(db: Database, userId: string, productId: string, i
           stockUnitId: parsed.data.stockUnitId,
           receiveUnitId: parsed.data.receiveUnitId,
           conversionFactor: parsed.data.conversionFactor,
-          costPrice: parsed.data.costPrice,
+          costPrice: roundBuyingPrice(parsed.data.costPrice),
           sellingPrice: parsed.data.sellingPrice,
           sizeMode: parsed.data.sizeMode,
-          sizes: parsed.data.sizes,
+          sizes: parsed.data.sizes.map((size) => ({ ...size, cost: roundBuyingPrice(size.cost) })),
           cupPrice: parsed.data.cupPrice,
           halfPrice: parsed.data.halfPrice,
           minStock: parsed.data.minStock,
@@ -358,7 +397,7 @@ export function applyPriceChange(
   const day = input.day.slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return fail('Choose a valid price-change date.')
   if (day > dateKey()) return fail('The price-change date cannot be in the future.')
-  const costPrice = Math.round(input.costPrice)
+  const costPrice = roundBuyingPrice(input.costPrice)
   const sellingPrice = Math.round(input.sellingPrice)
   if (!Number.isFinite(costPrice) || costPrice < 0 || !Number.isFinite(sellingPrice) || sellingPrice < 0) {
     return fail('Buying and selling prices must be zero or more.')
@@ -437,6 +476,7 @@ export function clearBusinessData(db: Database, userId: string): OpResult {
     priceChanges: [],
     suppliers: [],
     stockIns: [],
+    restockOrders: [],
     sales: [],
     movements: [],
     activities: [],
@@ -578,8 +618,8 @@ export function submitStockIn(db: Database, userId: string, draft: StockInDraft)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.deliveryDate) || draft.deliveryDate > dateKey()) {
     return fail('Enter a delivery date that is today or earlier.')
   }
-  if (actor.profile.role !== 'admin' && !isEmployeeAllowedDay(draft.deliveryDate)) {
-    return fail('You can only record stock in for today or the two days before.')
+  if (actor.profile.role !== 'admin' && !employeeDayOk(db, draft.deliveryDate)) {
+    return fail(RECORD_WINDOW_FAIL)
   }
   const supplierName = draft.supplierName.trim()
   if (supplierName.length < 2) return fail('Enter the supplier.')
@@ -597,6 +637,7 @@ export function submitStockIn(db: Database, userId: string, draft: StockInDraft)
     }
     const stockQuantity = line.receivedQuantity * product.conversionFactor
     const sizeName: SaleSize = line.sizeName === 'small' || line.sizeName === 'medium' || line.sizeName === 'big' ? line.sizeName : 'one'
+    const priced = pricedStockIn(line.costPerStockUnit, stockQuantity)
     items.push({
       id: uid(),
       productId: product.id,
@@ -605,8 +646,8 @@ export function submitStockIn(db: Database, userId: string, draft: StockInDraft)
       receiveUnitId: product.receiveUnitId,
       conversionFactor: product.conversionFactor,
       stockQuantity,
-      costPerStockUnit: line.costPerStockUnit,
-      totalCost: line.costPerStockUnit * stockQuantity,
+      costPerStockUnit: priced.costPerStockUnit,
+      totalCost: priced.totalCost,
     })
   }
 
@@ -832,7 +873,7 @@ export function submitSale(db: Database, userId: string, draft: SaleDraft): OpRe
   const stamped = now()
   const opened = new Date(draft.generatedAt ?? '')
   const openedOk = !Number.isNaN(opened.getTime()) && opened.getTime() <= Date.now() + 60_000
-  const generatedAt = openedOk && (actor.profile.role === 'admin' || isEmployeeAllowedDay(dateKey(opened)))
+  const generatedAt = openedOk && (actor.profile.role === 'admin' || employeeDayOk(db, dateKey(opened)))
     ? opened.toISOString()
     : stamped
   const openBill = recordKind === 'bill'
@@ -892,7 +933,9 @@ export function submitRemainingCount(db: Database, userId: string, lines: Array<
     }
     const sold = snap.available - line.remaining
     if (sold <= 0) continue
-    const unitCost = line.unitCost == null || !Number.isFinite(line.unitCost) || line.unitCost < 0 ? product.costPrice : Math.round(line.unitCost)
+    const unitCost = roundBuyingPrice(
+      line.unitCost == null || !Number.isFinite(line.unitCost) || line.unitCost < 0 ? product.costPrice : line.unitCost,
+    )
     items.push({
       id: uid(),
       productId: product.id,
@@ -975,7 +1018,15 @@ export function setBillPayment(db: Database, userId: string, transactionId: stri
       ? { ...item, recordKind: 'sale' as const, paymentStatus: 'paid' as const, status: 'approved' as const, isLoss: false, reviewedBy: userId, reviewedAt: stamped, rejectionReason: undefined }
       : item,
   )
-  const next = audit({ ...db, sales, movements: [...db.movements, ...movements] }, userId, 'sale.payment', 'sale', transactionId, `Marked ${record.code} for ${record.customerName || 'a customer'} as sold. It is now a sale.`)
+  const remaining = saleTotal(record.items) - (record.amountPaid ?? 0)
+  const next = audit(
+    applyCogsDebtPayment({ ...db, sales, movements: [...db.movements, ...movements] }, record.submittedBy, record.generatedAt, record.customerName, remaining, actor.profile.role === 'admin'),
+    userId,
+    'sale.payment',
+    'sale',
+    transactionId,
+    `Marked ${record.code} for ${record.customerName || 'a customer'} as sold. It is now a sale.`,
+  )
   return finish(next, `${record.code} is now a sale.`)
 }
 
@@ -1012,7 +1063,7 @@ export function recordBillPayment(db: Database, userId: string, transactionId: s
   const sales = coded.db.sales.map((item) => (item.id === record.id ? { ...item, amountPaid: (item.amountPaid ?? 0) + amount } : item))
   const left = remaining - amount
   const next = audit(
-    { ...coded.db, sales: [payment, ...sales] },
+    applyCogsDebtPayment({ ...coded.db, sales: [payment, ...sales] }, record.submittedBy, record.generatedAt, record.customerName, amount, actor.profile.role === 'admin'),
     userId,
     'sale.payment',
     'sale',
@@ -1151,6 +1202,7 @@ export function editStockIn(db: Database, userId: string, transactionId: string,
     }
     const stockQuantity = line.receivedQuantity * product.conversionFactor
     const sizeName: SaleSize = line.sizeName === 'small' || line.sizeName === 'medium' || line.sizeName === 'big' ? line.sizeName : 'one'
+    const priced = pricedStockIn(line.costPerStockUnit, stockQuantity)
     items.push({
       id: uid(),
       productId: product.id,
@@ -1159,8 +1211,8 @@ export function editStockIn(db: Database, userId: string, transactionId: string,
       receiveUnitId: product.receiveUnitId,
       conversionFactor: product.conversionFactor,
       stockQuantity,
-      costPerStockUnit: line.costPerStockUnit,
-      totalCost: line.costPerStockUnit * stockQuantity,
+      costPerStockUnit: priced.costPerStockUnit,
+      totalCost: priced.totalCost,
     })
   }
 
@@ -1210,8 +1262,8 @@ export function submitExpense(db: Database, userId: string, draft: ExpenseDraft)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.spentOn) || draft.spentOn > dateKey()) {
     return fail('Enter a date that is today or earlier.')
   }
-  if (actor.profile.role !== 'admin' && !isEmployeeAllowedDay(draft.spentOn)) {
-    return fail('You can only record expenses for today or the two days before.')
+  if (actor.profile.role !== 'admin' && !employeeDayOk(db, draft.spentOn)) {
+    return fail(RECORD_WINDOW_FAIL)
   }
   if ((draft.notes ?? '').trim().length > 400) return fail('Notes are too long.')
 
@@ -1758,6 +1810,19 @@ function cleanExpenseItems(items: CogsExpenseLine[] = []) {
     .filter((item) => item.description.length >= 2 && item.amount >= 1)
 }
 
+function cleanMobileItems(items: CogsMobileItem[] = [], fallbackDay: string, fallbackTotal = 0) {
+  const cleaned = items
+    .map((item) => ({
+      id: item.id,
+      amount: Math.max(0, Math.floor(item.amount || 0)),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : fallbackDay,
+    }))
+    .filter((item) => item.amount >= 1)
+  if (cleaned.length) return cleaned
+  if (fallbackTotal >= 1) return [{ amount: Math.floor(fallbackTotal), date: fallbackDay }]
+  return []
+}
+
 export function saveDayClose(
   db: Database,
   userId: string,
@@ -1769,6 +1834,7 @@ export function saveDayClose(
     expenseTotal?: number
     lines?: CogsLine[]
     expenseItems?: CogsExpenseLine[]
+    mobileItems?: CogsMobileItem[]
     submittedBy?: string
   },
 ): OpResult {
@@ -1777,15 +1843,16 @@ export function saveDayClose(
   const day = input.day.slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return fail('Choose a valid day.')
   const today = dateKey()
-  if (actor.profile.role === 'admin') {
-    if (day > today) return fail('COGS cannot be recorded for a future day.')
-  } else if (!isEmployeeAllowedDay(day)) {
-    return fail('You can only record COGS for today or the two days before.')
-  }
   const owner = actor.profile.role === 'admin' && input.submittedBy ? input.submittedBy : userId
   const existing = (db.dayCloses ?? []).find((item) => item.day === day && item.submittedBy === owner)
+  if (actor.profile.role === 'admin') {
+    if (day > today) return fail('COGS cannot be recorded for a future day.')
+  } else if (!existing && !employeeDayOk(db, day)) {
+    return fail(RECORD_WINDOW_FAIL)
+  }
   if (existing?.status === 'approved' && actor.profile.role !== 'admin') return fail('This COGS report is already approved.')
   const expenseItems = cleanExpenseItems(input.expenseItems)
+  const mobileItems = cleanMobileItems(input.mobileItems, day, input.mobileReceived)
   const debts = cleanDebts(input.debts, actor.profile.role === 'admin')
   const record: DayClose = {
     id: existing?.id ?? uid(),
@@ -1795,7 +1862,8 @@ export function saveDayClose(
     debts,
     lines: cleanLines(input.lines),
     expenseItems,
-    mobileReceived: Math.max(0, Math.floor(input.mobileReceived || 0)),
+    mobileItems,
+    mobileReceived: Math.max(0, Math.floor(input.mobileReceived || mobileItems.reduce((sum, item) => sum + item.amount, 0))),
     expenseTotal: Math.max(0, Math.floor(input.expenseTotal ?? expenseItems.reduce((sum, item) => sum + item.amount, 0))),
     status: 'pending',
     createdAt: existing?.createdAt ?? now(),
@@ -1823,7 +1891,7 @@ export function updateDayClose(
   db: Database,
   userId: string,
   id: string,
-  input: { debts: DayDebt[]; mobileReceived: number; expenseTotal: number; lines?: CogsLine[]; expenseItems?: CogsExpenseLine[] },
+  input: { debts: DayDebt[]; mobileReceived: number; expenseTotal: number; lines?: CogsLine[]; expenseItems?: CogsExpenseLine[]; mobileItems?: CogsMobileItem[] },
 ): OpResult {
   const actor = activeProfile(db, userId)
   if (!actor.ok) return actor
@@ -1834,6 +1902,7 @@ export function updateDayClose(
     return fail('You can only edit your COGS report before it is approved.')
   }
   const expenseItems = cleanExpenseItems(input.expenseItems ?? current.expenseItems)
+  const mobileItems = cleanMobileItems(input.mobileItems ?? current.mobileItems, current.day, input.mobileReceived)
   const dayCloses = (db.dayCloses ?? []).map((item) =>
     item.id === id
       ? {
@@ -1841,7 +1910,8 @@ export function updateDayClose(
           debts: cleanDebts(input.debts, isAdmin),
           lines: cleanLines(input.lines ?? item.lines),
           expenseItems,
-          mobileReceived: Math.max(0, Math.floor(input.mobileReceived || 0)),
+          mobileItems,
+          mobileReceived: Math.max(0, Math.floor(input.mobileReceived || mobileItems.reduce((sum, row) => sum + row.amount, 0))),
           expenseTotal: Math.max(0, Math.floor(input.expenseTotal || expenseItems.reduce((sum, row) => sum + row.amount, 0))),
           status: isAdmin ? ('pending' as const) : item.status,
           reviewedBy: isAdmin ? undefined : item.reviewedBy,
@@ -1894,20 +1964,349 @@ export function reviewDebtPayment(db: Database, userId: string, closeId: string,
   return finish(audit({ ...db, dayCloses }, userId, approve ? 'debt.approve' : 'debt.reject', 'day_close', closeId, summary), approve ? 'Debt payment approved.' : 'Debt payment rejected.')
 }
 
-export function setDayCloseDebtPayment(db: Database, userId: string, closeId: string, debtId: string, paidAmount: number): OpResult {
-  const adminCheck = requireAdmin(db, userId)
-  if (!adminCheck.ok) return adminCheck
+export function setDayCloseDebtPayment(
+  db: Database,
+  userId: string,
+  closeId: string,
+  debtId: string,
+  paidAmount: number,
+  details?: { customerName?: string; amount?: number; products?: string },
+): OpResult {
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
   const current = (db.dayCloses ?? []).find((item) => item.id === closeId)
   if (!current) return fail('COGS report not found.')
-  const target = current.debts.find((item) => item.id === debtId)
-  if (!target) return fail('Debt not found.')
-  const next = setDebtPayment(target, paidAmount, true)
-  const debts = current.debts.map((item) => (item.id === debtId ? next : item))
+  const asAdmin = actor.profile.role === 'admin'
+  if (!asAdmin && current.submittedBy !== userId) return fail('You can only update your own bills.')
+  const name = (details?.customerName ?? '').trim().toLowerCase()
+  const existing = current.debts.find((item) => item.id && item.id === debtId)
+    ?? current.debts.find((item) => name && item.customerName.trim().toLowerCase() === name)
+  const seed = existing ?? {
+    id: uid(),
+    customerName: details?.customerName?.trim() || '',
+    amount: Math.max(0, Math.floor(details?.amount || 0)),
+    products: (details?.products ?? '').trim(),
+    paidAmount: 0,
+    paymentStatus: 'unpaid' as const,
+  }
+  if (!existing && (seed.customerName.length < 2 || seed.amount < 1)) return fail('Debt not found.')
+  const next = setDebtPayment({ ...seed, amount: Math.max(seed.amount, Math.floor(details?.amount || seed.amount)) }, paidAmount, asAdmin)
+  const debts = existing
+    ? current.debts.map((item) => (item.id === existing.id ? next : item))
+    : [...current.debts, next]
   const dayCloses = (db.dayCloses ?? []).map((item) => (item.id === closeId ? { ...item, debts } : item))
   const summary = debtPaid(next) > 0
-    ? `Updated debt payment from ${target.customerName} for ${current.day}.`
-    : `Marked debt from ${target.customerName} unpaid for ${current.day}.`
+    ? `Updated debt payment from ${next.customerName} for ${current.day}.`
+    : `Marked debt from ${next.customerName} unpaid for ${current.day}.`
   return finish(audit({ ...db, dayCloses }, userId, 'debt.set_payment', 'day_close', closeId, summary), debtPaid(next) > 0 ? 'Debt payment updated.' : 'Debt marked unpaid.')
+}
+
+function restockLines(db: Database, draft: RestockOrderDraft, previous: RestockOrderItem[] = []): RestockOrderItem[] | { error: string } {
+  const merged = new Map<string, number>()
+  for (const line of draft.items) {
+    const qty = Number(line.receivedQuantity)
+    if (!line.productId || !Number.isFinite(qty) || qty <= 0) continue
+    merged.set(line.productId, (merged.get(line.productId) ?? 0) + qty)
+  }
+  for (const line of previous.filter((item) => item.received)) {
+    if (merged.has(line.productId)) continue
+    return { error: `${productName(db, line.productId)} is received and cannot be removed.` }
+  }
+  const prior = new Map(previous.map((item) => [item.productId, item]))
+  const items: RestockOrderItem[] = []
+  for (const [productId, receivedQuantity] of merged) {
+    const product = db.products.find((item) => item.id === productId && item.isActive)
+    if (!product) return { error: 'Choose an active product.' }
+    if (receivedQuantity > 100_000) return { error: `Enter a valid quantity for ${product.name}.` }
+    const conversionFactor = product.conversionFactor
+    const stockQuantity = stockQtyFromReceived(receivedQuantity, conversionFactor)
+    if (stockQuantity <= 0) return { error: `Enter a valid quantity for ${product.name}.` }
+    const existing = prior.get(product.id)
+    items.push({
+      id: existing?.id ?? uid(),
+      productId: product.id,
+      receivedQuantity,
+      receiveUnitId: product.receiveUnitId,
+      conversionFactor,
+      stockQuantity,
+      received: Boolean(existing?.received),
+      receivedAt: existing?.receivedAt,
+    })
+  }
+  if (!items.length) return { error: 'Enter a quantity for at least one product.' }
+  return items
+}
+
+function takeRestockCode(db: Database) {
+  const used = new Set((db.restockOrders ?? []).map((item) => item.code))
+  let n = (db.restockOrders ?? []).length + 1
+  let code = `RO-${String(n).padStart(4, '0')}`
+  while (used.has(code)) {
+    n += 1
+    code = `RO-${String(n).padStart(4, '0')}`
+  }
+  return code
+}
+
+function applyReceivedQtyDeltas(db: Database, order: RestockOrder, previous: RestockOrderItem[], next: RestockOrderItem[]): OpResult {
+  let working = db
+  const delivery = order.stockInId ? working.stockIns.find((item) => item.id === order.stockInId) : undefined
+  for (const line of next) {
+    if (!line.received) continue
+    const old = previous.find((item) => item.productId === line.productId)
+    if (!old) continue
+    const delta = Math.round((line.stockQuantity - old.stockQuantity) * 100) / 100
+    if (!delta) continue
+    if (!delivery) return fail('Received stock in was not found for this order.')
+    if (delta < 0) {
+      const confirmed = working.movements.reduce((sum, movement) => (movement.productId === line.productId ? sum + movement.quantity : sum), 0)
+      if (confirmed + delta < -0.0001) {
+        return fail(`Not enough remaining stock to reduce ${productName(db, line.productId)}. Sell or count first.`)
+      }
+    }
+    let applied = false
+    working = {
+      ...working,
+      stockIns: working.stockIns.map((item) =>
+        item.id !== delivery.id
+          ? item
+          : {
+              ...item,
+              items: item.items.map((row) =>
+                row.productId !== line.productId
+                  ? row
+                  : {
+                      ...row,
+                      receivedQuantity: line.receivedQuantity,
+                      receiveUnitId: line.receiveUnitId,
+                      conversionFactor: line.conversionFactor,
+                      stockQuantity: line.stockQuantity,
+                      totalCost: Math.round(roundBuyingPrice(row.costPerStockUnit) * line.stockQuantity),
+                      costPerStockUnit: roundBuyingPrice(row.costPerStockUnit),
+                    },
+              ),
+            },
+      ),
+      movements: working.movements.map((movement) => {
+        if (applied) return movement
+        const match =
+          movement.referenceType === 'stock_in' &&
+          movement.productId === line.productId &&
+          (movement.referenceId === delivery.id || movement.referenceId === delivery.code)
+        if (!match) return movement
+        applied = true
+        return { ...movement, quantity: movement.quantity + delta }
+      }),
+    }
+  }
+  return { ok: true, db: working }
+}
+
+export function saveRestockOrder(db: Database, userId: string, draft: RestockOrderDraft): OpResult {
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
+  if ((draft.notes ?? '').trim().length > 400) return fail('Notes are too long.')
+  const notes = (draft.notes ?? '').trim()
+  const stamped = now()
+  if (draft.id) {
+    const current = (db.restockOrders ?? []).find((item) => item.id === draft.id)
+    if (!current) return fail('Order not found.')
+    if (current.submittedBy !== userId && actor.profile.role !== 'admin') return fail('You can only change your own orders.')
+    const hadReceived = current.items.some((item) => item.received) || current.status !== 'not_received'
+    if (hadReceived && current.receivedEditUsed) return fail('This received order was already edited once.')
+    const built = restockLines(db, draft, current.items)
+    if ('error' in built) return fail(built.error)
+    const adjusted = hadReceived ? applyReceivedQtyDeltas(db, current, current.items, built) : { ok: true as const, db }
+    if (!adjusted.ok) return adjusted
+    const restockOrders = (adjusted.db.restockOrders ?? []).map((item) =>
+      item.id === current.id ? { ...item, notes, items: built, receivedEditUsed: hadReceived ? true : item.receivedEditUsed } : item,
+    )
+    return finish(
+      audit({ ...adjusted.db, restockOrders }, userId, hadReceived ? 'restock.edit_received' : 'restock.update', 'restock_order', current.id, `Updated restock order ${current.code}.`),
+      hadReceived ? `${current.code} saved. This received order cannot be edited again.` : `${current.code} saved.`,
+    )
+  }
+  const built = restockLines(db, draft)
+  if ('error' in built) return fail(built.error)
+  const order: RestockOrder = {
+    id: uid(),
+    code: takeRestockCode(db),
+    notes,
+    status: 'not_received',
+    submittedBy: userId,
+    submittedAt: stamped,
+    items: built,
+  }
+  const restockOrders = [order, ...(db.restockOrders ?? [])]
+  return finish(
+    audit({ ...db, restockOrders }, userId, 'restock.submit', 'restock_order', order.id, `Saved restock order ${order.code}.`),
+    `${order.code} saved. Mark it received when the stock arrives.`,
+  )
+}
+
+function restockReceiptStatus(items: RestockOrderItem[]): RestockOrderStatus {
+  const got = items.filter((item) => item.received).length
+  if (!got) return 'not_received'
+  if (got === items.length) return 'received'
+  return 'partial'
+}
+
+function patchRestockOrder(db: Database, order: RestockOrder, items: RestockOrderItem[], extra: Partial<RestockOrder> = {}): Database {
+  const status = restockReceiptStatus(items)
+  const next: RestockOrder = {
+    ...order,
+    ...extra,
+    items,
+    status,
+    receivedAt: status === 'not_received' ? undefined : extra.receivedAt ?? order.receivedAt,
+    receivedBy: status === 'not_received' ? undefined : extra.receivedBy ?? order.receivedBy,
+    stockInId: 'stockInId' in extra ? extra.stockInId : order.stockInId,
+  }
+  return { ...db, restockOrders: (db.restockOrders ?? []).map((item) => (item.id === order.id ? next : item)) }
+}
+
+function receiveRestockItem(db: Database, order: RestockOrder, line: RestockOrderItem, userId: string): OpResult {
+  if (line.received) return { ok: true, db }
+  const stamped = now()
+  const product = db.products.find((item) => item.id === line.productId && item.isActive)
+  if (!product) return fail('Choose an active product.')
+  const conversionFactor = product.conversionFactor
+  const stockQuantity = stockQtyFromReceived(line.receivedQuantity, conversionFactor)
+  if (stockQuantity <= 0) return fail(`Enter a valid quantity for ${product.name}.`)
+  const priced = pricedStockIn(sizeCost(product, 'one'), stockQuantity)
+  const stockInItem: StockInItem = {
+    id: uid(),
+    productId: product.id,
+    sizeName: 'one',
+    receivedQuantity: line.receivedQuantity,
+    receiveUnitId: product.receiveUnitId,
+    conversionFactor,
+    stockQuantity,
+    costPerStockUnit: priced.costPerStockUnit,
+    totalCost: priced.totalCost,
+  }
+  let working = db
+  let stockInId = order.stockInId
+  let delivery = stockInId ? working.stockIns.find((item) => item.id === stockInId) : undefined
+  if (delivery?.items.some((item) => item.productId === line.productId)) {
+    return fail(`${product.name} is already on this restock stock in.`)
+  }
+  if (!delivery) {
+    let suppliers = working.suppliers
+    let supplier = suppliers.find((item) => item.name.toLowerCase() === 'restock order')
+    if (!supplier) {
+      supplier = { id: uid(), name: 'Restock order', phone: '', isActive: true, createdAt: stamped }
+      suppliers = [...suppliers, supplier]
+    }
+    const coded = takeCode({ ...working, suppliers }, 'stockIn', 'SI')
+    const invoiceRef = allocateInvoiceRef(coded.db.stockIns.map((item) => item.invoiceRef), '')
+    const transaction: StockInTransaction = {
+      id: uid(),
+      code: coded.code,
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      deliveryDate: dateKey(),
+      invoiceRef,
+      notes: `Restock ${order.code}`,
+      status: 'approved',
+      submittedBy: userId,
+      submittedAt: stamped,
+      reviewedBy: userId,
+      reviewedAt: stamped,
+      items: [stockInItem],
+    }
+    const movement: InventoryMovement = {
+      id: uid(),
+      productId: product.id,
+      type: 'stock_in',
+      quantity: stockQuantity,
+      unitCost: priced.costPerStockUnit,
+      referenceType: 'stock_in',
+      referenceId: transaction.id,
+      note: `Received restock ${order.code} as ${transaction.code}`,
+      createdBy: userId,
+      createdAt: stamped,
+    }
+    working = { ...coded.db, stockIns: [transaction, ...coded.db.stockIns], movements: [...coded.db.movements, movement] }
+    stockInId = transaction.id
+  } else {
+    const movement: InventoryMovement = {
+      id: uid(),
+      productId: product.id,
+      type: 'stock_in',
+      quantity: stockQuantity,
+      unitCost: priced.costPerStockUnit,
+      referenceType: 'stock_in',
+      referenceId: delivery.id,
+      note: `Received restock ${order.code} as ${delivery.code}`,
+      createdBy: userId,
+      createdAt: stamped,
+    }
+    working = {
+      ...working,
+      stockIns: working.stockIns.map((item) =>
+        item.id === delivery.id ? { ...item, items: [...item.items, stockInItem] } : item,
+      ),
+      movements: [...working.movements, movement],
+    }
+  }
+  working = {
+    ...working,
+    products: working.products.map((item) =>
+      item.id === product.id ? { ...item, costPrice: priced.costPerStockUnit, updatedAt: stamped } : item,
+    ),
+  }
+  const items = order.items.map((item) =>
+    item.id === line.id
+      ? { ...item, received: true, receivedAt: stamped, receiveUnitId: product.receiveUnitId, conversionFactor, stockQuantity }
+      : item,
+  )
+  const next = patchRestockOrder(working, { ...order, stockInId }, items, {
+    stockInId,
+    receivedAt: stamped,
+    receivedBy: userId,
+  })
+  return {
+    ok: true,
+    db: audit(next, userId, 'restock.receive_item', 'restock_order', order.id, `Received ${product.name} on ${order.code}.`),
+  }
+}
+
+export function setRestockItemStatus(db: Database, userId: string, orderId: string, itemId: string, received: boolean): OpResult {
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
+  const current = (db.restockOrders ?? []).find((item) => item.id === orderId)
+  if (!current) return fail('Order not found.')
+  if (current.submittedBy !== userId && actor.profile.role !== 'admin') return fail('You can only change your own orders.')
+  const line = current.items.find((item) => item.id === itemId)
+  if (!line) return fail('Order item not found.')
+  if (Boolean(line.received) === received) {
+    return finish(db, received ? 'This product is already received.' : 'This product is not received.')
+  }
+  if (!received) return fail('Received products cannot be unmarked. Edit the order once if the quantity is wrong.')
+  const next = receiveRestockItem(db, current, line, userId)
+  if (!next.ok) return next
+  return finish(next.db, `${productName(db, line.productId)} marked received. Confirmed stock was updated.`)
+}
+
+export function setRestockOrderStatus(db: Database, userId: string, orderId: string, status: RestockOrderStatus): OpResult {
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
+  const current = (db.restockOrders ?? []).find((item) => item.id === orderId)
+  if (!current) return fail('Order not found.')
+  if (current.submittedBy !== userId && actor.profile.role !== 'admin') return fail('You can only change your own orders.')
+  if (status === 'partial') return fail('Mark products received one by one, or mark all received.')
+  if (status !== 'received') return fail('Received orders cannot be unmarked. Edit the order once if the quantity is wrong.')
+  const pending = current.items.filter((item) => !item.received)
+  if (!pending.length) return finish(db, `${current.code} is already received.`)
+  let working: Database = db
+  for (const line of pending) {
+    const live = (working.restockOrders ?? []).find((item) => item.id === current.id) ?? current
+    const next = receiveRestockItem(working, live, line, userId)
+    if (!next.ok) return next
+    working = next.db
+  }
+  return finish(working, `${current.code} marked received. Confirmed stock was updated.`)
 }
 
 export function markNotificationRead(db: Database, userId: string, notificationId: string): OpResult {

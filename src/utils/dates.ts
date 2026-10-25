@@ -21,21 +21,29 @@ export function dateKeyDaysAgo(days: number) {
   return dateKey(addDays(-days))
 }
 
-export const EMPLOYEE_LOOKBACK_DAYS = 2
+export const RECORD_LOOKBACK_OPTIONS = [1, 2, 3, 5, 7] as const
+export type RecordLookbackDays = (typeof RECORD_LOOKBACK_OPTIONS)[number]
+export const DEFAULT_RECORD_LOOKBACK_DAYS: RecordLookbackDays = 2
+export const EMPLOYEE_LOOKBACK_DAYS = DEFAULT_RECORD_LOOKBACK_DAYS
 
-export function employeeMinDateKey() {
-  return dateKeyDaysAgo(EMPLOYEE_LOOKBACK_DAYS)
+export function normalizeRecordLookback(value: unknown): RecordLookbackDays {
+  const days = typeof value === 'number' ? value : Number(value)
+  return RECORD_LOOKBACK_OPTIONS.includes(days as RecordLookbackDays) ? (days as RecordLookbackDays) : DEFAULT_RECORD_LOOKBACK_DAYS
 }
 
-export function isEmployeeAllowedDay(day: string, extra?: string) {
+export function employeeMinDateKey(lookbackDays: unknown = DEFAULT_RECORD_LOOKBACK_DAYS) {
+  return dateKeyDaysAgo(Math.max(0, normalizeRecordLookback(lookbackDays) - 1))
+}
+
+export function isEmployeeAllowedDay(day: string, extra?: string, lookbackDays: unknown = DEFAULT_RECORD_LOOKBACK_DAYS) {
   const today = dateKey()
-  const min = employeeMinDateKey()
+  const min = employeeMinDateKey(lookbackDays)
   if (extra && day === extra) return true
   return /^\d{4}-\d{2}-\d{2}$/.test(day) && day >= min && day <= today
 }
 
-export function isoOnEmployeeDay(day: string) {
-  if (!isEmployeeAllowedDay(day)) return new Date().toISOString()
+export function isoOnEmployeeDay(day: string, lookbackDays: unknown = DEFAULT_RECORD_LOOKBACK_DAYS) {
+  if (!isEmployeeAllowedDay(day, undefined, lookbackDays)) return new Date().toISOString()
   const [year, month, date] = day.split('-').map(Number)
   const now = new Date()
   const local = new Date(year, month - 1, date, now.getHours(), now.getMinutes(), now.getSeconds())

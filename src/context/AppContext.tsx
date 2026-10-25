@@ -49,6 +49,9 @@ import {
   updateEmployeeRemote,
   deleteEmployeeRemote,
   deleteRecordRemote,
+  saveRestockOrderRemote,
+  setRestockItemStatusRemote,
+  setRestockOrderStatusRemote,
   saveDayCloseRemote,
   updateDayCloseRemote,
   deleteDayCloseRemote,
@@ -103,6 +106,9 @@ import {
   updateEmployee,
   deleteEmployee,
   deleteBusinessRecord,
+  saveRestockOrder,
+  setRestockItemStatus,
+  setRestockOrderStatus,
   saveDayClose,
   updateDayClose,
   deleteDayClose,
@@ -127,9 +133,12 @@ import type {
   DayDebt,
   CogsExpenseLine,
   CogsLine,
+  CogsMobileItem,
   ProductDraft,
   RecordDeleteKind,
   Profile,
+  RestockOrderDraft,
+  RestockOrderStatus,
   SaleDraft,
   Session,
   StockInDraft,
@@ -198,6 +207,7 @@ interface AppContextValue {
   sendSale: (draft: SaleDraft) => Promise<ActionResult>
   sendRemainingCount: (lines: Array<{ productId: string; remaining: number; unitCost?: number | null }>) => Promise<ActionResult>
   approveAllPending: (kind: 'stock_in' | 'sale' | 'bill') => Promise<ActionResult>
+  setRestockItemStatus: (orderId: string, itemId: string, received: boolean) => Promise<ActionResult>
   editStockIn: (id: string, draft: StockInDraft) => Promise<ActionResult>
   editSale: (id: string, draft: SaleDraft) => Promise<ActionResult>
   setBillPayment: (id: string, paymentStatus: 'paid' | 'unpaid') => Promise<ActionResult>
@@ -215,6 +225,7 @@ interface AppContextValue {
     expenseTotal?: number
     lines?: CogsLine[]
     expenseItems?: CogsExpenseLine[]
+    mobileItems?: CogsMobileItem[]
     submittedBy?: string
   }) => Promise<ActionResult>
   updateDayClose: (id: string, input: {
@@ -223,11 +234,20 @@ interface AppContextValue {
     expenseTotal: number
     lines?: CogsLine[]
     expenseItems?: CogsExpenseLine[]
+    mobileItems?: CogsMobileItem[]
   }) => Promise<ActionResult>
   deleteDayClose: (id: string) => Promise<ActionResult>
   approveDayClose: (id: string) => Promise<ActionResult>
   reviewDebtPayment: (closeId: string, debtId: string, approve: boolean) => Promise<ActionResult>
   setDayCloseDebtPayment: (closeId: string, debtId: string, paidAmount: number) => Promise<ActionResult>
+  acceptStockIn: (id: string) => Promise<ActionResult>
+  declineStockIn: (id: string, reason: string) => Promise<ActionResult>
+  setDayCloseDebtPayment: (
+    closeId: string,
+    debtId: string,
+    paidAmount: number,
+    details?: { customerName?: string; amount?: number; products?: string },
+  ) => Promise<ActionResult>
   acceptStockIn: (id: string) => Promise<ActionResult>
   declineStockIn: (id: string, reason: string) => Promise<ActionResult>
   acceptSale: (id: string) => Promise<ActionResult>
@@ -239,7 +259,7 @@ interface AppContextValue {
   declineExpense: (id: string, reason: string) => Promise<ActionResult>
   withdraw: (kind: 'stock_in' | 'sale' | 'activity' | 'expense', id: string, reason: string) => Promise<ActionResult>
   adjust: (draft: AdjustmentDraft) => Promise<ActionResult>
-  saveSettings: (input: { businessName: string; currency: string; currencySymbol: string; lowStockAlerts: boolean; allowRemainingCount: boolean }) => Promise<ActionResult>
+  saveSettings: (input: { businessName: string; currency: string; currencySymbol: string; lowStockAlerts: boolean; allowRemainingCount: boolean; recordLookbackDays: 1 | 2 | 3 | 5 | 7 }) => Promise<ActionResult>
   saveActivityType: (
     id: string,
     input: { pricingMode: 'per_game' | 'per_session' | 'per_play' | 'flat'; unitPrice: number; unitLabel: string; isActive: boolean },
@@ -558,6 +578,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     products: db.products,
     suppliers: db.suppliers,
     stockIns: db.stockIns,
+    restockOrders: db.restockOrders ?? [],
     sales: db.sales,
     movements: db.movements,
     activityTypes: db.activityTypes,
@@ -624,16 +645,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return commit(requestPasswordReset(dbRef.current, email), false)
     },
     resetWithToken: async (token, password) => {
-      if (!remote) return commit(resetPassword(dbRef.current, token, password))
+      if (!remote) {
+        const result = commit(resetPassword(dbRef.current, token, password))
+        if (result.ok) endSession()
+        return result
+      }
       const result = await updatePasswordRemote(password)
       if (!result.ok) pushToast('error', result.error)
       else if (result.message) pushToast('success', result.message)
+      if (result.ok) endSession()
       return result
     },
     changeOwnPassword: async (current, password) => {
-      if (!remote) return run((database, userId) => changePassword(database, userId, current, password))
+      if (!remote) {
+        const result = run((database, userId) => changePassword(database, userId, current, password))
+        if (result.ok) endSession()
+        return result
+      }
       const email = dbRef.current.profiles.find((profile) => profile.id === sessionRef.current?.userId)?.email ?? ''
-      return runRemote(() => changePasswordRemote(email, current, password))
+      try {
+        const result = await changePasswordRemote(email, current, password)
+        if (!result.ok) {
+          pushToast('error', result.error)
+          return result
+        }
+        if (result.message) pushToast('success', result.message)
+        endSession()
+        return result
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Something went wrong.'
+        pushToast('error', message)
+        return { ok: false, error: message }
+      }
     },
     saveProfile: async (input) => (remote ? runRemote(() => saveProfileRemote(input)) : run((database, userId) => updateOwnProfile(database, userId, input))),
     addCategory: async (input) => (remote ? runRemote(() => saveCategoryRemote(null, input)) : run((database, userId) => createCategory(database, userId, input))),
@@ -652,6 +695,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     editEmployee: async (id, patch) => (remote ? runRemote(() => updateEmployeeRemote(id, patch)) : run((database, userId) => updateEmployee(database, userId, id, patch))),
     removeEmployee: async (id) => (remote ? runRemote(() => deleteEmployeeRemote(id)) : run((database, userId) => deleteEmployee(database, userId, id))),
     sendStockIn: async (draft) => (remote ? runRemote(() => sendStockInRemote(draft)) : run((database, userId) => submitStockIn(database, userId, draft))),
+    saveRestockOrder: async (draft) => (remote ? runRemote(() => saveRestockOrderRemote(draft)) : run((database, userId) => saveRestockOrder(database, userId, draft))),
+    setRestockOrderStatus: async (id, status) => (remote ? runRemote(() => setRestockOrderStatusRemote(id, status)) : run((database, userId) => setRestockOrderStatus(database, userId, id, status))),
+    setRestockItemStatus: async (orderId, itemId, received) =>
+      remote
+        ? runRemote(() => setRestockItemStatusRemote(orderId, itemId, received))
+        : run((database, userId) => setRestockItemStatus(database, userId, orderId, itemId, received)),
     sendSale: async (draft) => (remote ? runRemote(() => sendSaleRemote(draft)) : run((database, userId) => submitSale(database, userId, draft))),
     sendRemainingCount: async (lines) => (remote ? runRemote(() => sendRemainingCountRemote(lines)) : run((database, userId) => submitRemainingCount(database, userId, lines))),
     approveAllPending: async (kind) => {
@@ -769,13 +818,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deleteDayClose: async (id) => (remote ? runRemote(() => deleteDayCloseRemote(id)) : run((database, userId) => deleteDayClose(database, userId, id))),
     approveDayClose: async (id) => (remote ? runRemote(() => approveDayCloseRemote(id)) : run((database, userId) => approveDayClose(database, userId, id))),
     reviewDebtPayment: async (closeId, debtId, approve) => (remote ? runRemote(() => reviewDebtPaymentRemote(closeId, debtId, approve)) : run((database, userId) => reviewDebtPayment(database, userId, closeId, debtId, approve))),
-    setDayCloseDebtPayment: async (closeId, debtId, paidAmount) => (remote ? runRemote(() => setDayCloseDebtPaymentRemote(closeId, debtId, paidAmount)) : run((database, userId) => setDayCloseDebtPayment(database, userId, closeId, debtId, paidAmount))),
-    acceptStockIn: async (id) => (remote ? runRemote(() => acceptStockInRemote(id)) : run((database, userId) => approveStockIn(database, userId, id))),
-    declineStockIn: async (id, reason) => (remote ? runRemote(() => declineStockInRemote(id, reason)) : run((database, userId) => rejectStockIn(database, userId, id, reason))),
-    acceptSale: async (id) => (remote ? runRemote(() => acceptSaleRemote(id)) : run((database, userId) => approveSale(database, userId, id))),
-    recordBillLoss: async (id) => (remote ? runRemote(() => recordBillLossRemote(id)) : run((database, userId) => recordBillLoss(database, userId, id))),
-    declineSale: async (id, reason) => (remote ? runRemote(() => declineSaleRemote(id, reason)) : run((database, userId) => rejectSale(database, userId, id, reason))),
-    acceptActivity: async (id) => (remote ? runRemote(() => acceptActivityRemote(id)) : run((database, userId) => approveActivity(database, userId, id))),
+    setDayCloseDebtPayment: async (closeId, debtId, paidAmount, details) => (remote ? runRemote(() => setDayCloseDebtPaymentRemote(closeId, debtId, paidAmount, details)) : run((database, userId) => setDayCloseDebtPayment(database, userId, closeId, debtId, paidAmount, details))),
     declineActivity: async (id, reason) => (remote ? runRemote(() => declineActivityRemote(id, reason)) : run((database, userId) => rejectActivity(database, userId, id, reason))),
     acceptExpense: async (id) => (remote ? runRemote(() => acceptExpenseRemote(id)) : run((database, userId) => approveExpense(database, userId, id))),
     declineExpense: async (id, reason) => (remote ? runRemote(() => declineExpenseRemote(id, reason)) : run((database, userId) => rejectExpense(database, userId, id, reason))),

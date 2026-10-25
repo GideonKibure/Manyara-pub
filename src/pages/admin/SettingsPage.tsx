@@ -9,6 +9,7 @@ import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import { settingsSchema, type SettingsValues } from '@/schemas'
 import type { Unit } from '@/types'
+import { RECORD_LOOKBACK_OPTIONS, type RecordLookbackDays } from '@/utils/dates'
 
 export function SettingsPage() {
   const app = useApp()
@@ -28,13 +29,19 @@ export function SettingsPage() {
       currencySymbol: app.settings.currencySymbol,
       lowStockAlerts: app.settings.lowStockAlerts,
       allowRemainingCount: app.settings.allowRemainingCount,
+      recordLookbackDays: app.settings.recordLookbackDays,
     },
   })
+  const lookback = app.settings.recordLookbackDays
+  const saveLookback = (days: RecordLookbackDays) => {
+    form.setValue('recordLookbackDays', days)
+    void app.saveSettings({ ...form.getValues(), allowRemainingCount: app.settings.allowRemainingCount, recordLookbackDays: days })
+  }
   return (
     <div className="space-y-4">
       <PageHeader title={t('pageSettings')} description={t('pageSettingsBody')} />
       <Panel>
-        <form className="grid gap-4 md:grid-cols-2" onSubmit={form.handleSubmit(async (values) => { await app.saveSettings({ ...values, allowRemainingCount: app.settings.allowRemainingCount }) })}>
+        <form className="grid gap-4 md:grid-cols-2" onSubmit={form.handleSubmit(async (values) => { await app.saveSettings({ ...values, allowRemainingCount: app.settings.allowRemainingCount, recordLookbackDays: app.settings.recordLookbackDays }) })}>
           <Field label={t('fieldBusinessName')} error={form.formState.errors.businessName?.message}><TextInput {...form.register('businessName')} /></Field>
           <Field label={t('fieldCurrency')} error={form.formState.errors.currency?.message}><TextInput {...form.register('currency')} /></Field>
           <Field label={t('fieldCurrencySymbol')} error={form.formState.errors.currencySymbol?.message}><TextInput {...form.register('currencySymbol')} /></Field>
@@ -49,19 +56,36 @@ export function SettingsPage() {
           <Button
             type="button"
             variant={app.settings.allowRemainingCount ? 'gold' : 'secondary'}
-            onClick={() => void app.saveSettings({ ...form.getValues(), allowRemainingCount: true })}
+            onClick={() => void app.saveSettings({ ...form.getValues(), allowRemainingCount: true, recordLookbackDays: lookback })}
           >
             {t('settingsAllow')}
           </Button>
           <Button
             type="button"
             variant={!app.settings.allowRemainingCount ? 'gold' : 'secondary'}
-            onClick={() => void app.saveSettings({ ...form.getValues(), allowRemainingCount: false })}
+            onClick={() => void app.saveSettings({ ...form.getValues(), allowRemainingCount: false, recordLookbackDays: lookback })}
           >
             {t('settingsDeny')}
           </Button>
         </div>
         <p className="mt-3 text-sm font-medium text-ink">{app.settings.allowRemainingCount ? t('settingsRemainingOn') : t('settingsRemainingOff')}</p>
+      </Panel>
+      <Panel>
+        <h2 className="font-semibold">{t('settingsLookbackTitle')}</h2>
+        <p className="mt-1 text-sm leading-6 text-stone-600">{t('settingsLookbackHint')}</p>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5 sm:max-w-2xl">
+          {RECORD_LOOKBACK_OPTIONS.map((days) => (
+            <Button
+              key={days}
+              type="button"
+              variant={lookback === days ? 'gold' : 'secondary'}
+              onClick={() => saveLookback(days)}
+            >
+              {t(days === 7 ? 'settingsLookbackWeek' : days === 1 ? 'settingsLookbackDay' : 'settingsLookbackDays').replace('{n}', String(days))}
+            </Button>
+          ))}
+        </div>
+        <p className="mt-3 text-sm font-medium text-ink">{t('settingsLookbackOn').replace('{n}', String(lookback))}</p>
       </Panel>
       <Panel>
         <h2 className="font-semibold">{t('settingsUnitsTitle')}</h2>

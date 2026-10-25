@@ -149,6 +149,7 @@ export const settingsSchema = z.object({
   currencySymbol: z.string().trim().min(1, 'Enter a currency symbol').max(8),
   lowStockAlerts: z.boolean(),
   allowRemainingCount: z.boolean(),
+  recordLookbackDays: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(5), z.literal(7)]),
 })
 
 export const unitSchema = z.object({

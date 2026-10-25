@@ -35,7 +35,7 @@ export function ActivitiesPage() {
     return (
       <div>
         <PageHeader title={t('pageActivityShort')} description={t('pageActivityShortBody')} />
-        <Panel><p className="text-sm text-stone-600">Your account is not allowed to submit pool table or korokoro income. Ask an administrator if this should change.</p></Panel>
+        <Panel><p className="text-sm text-stone-600">{t('activityBlocked')}</p></Panel>
       </div>
     )
   }
@@ -54,7 +54,7 @@ export function ActivitiesPage() {
             {types.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
           </SelectInput>
         </Field>
-        {selected && <p className="text-sm text-stone-600">{pricingLabel(selected.pricingMode)} at {app.money(selected.unitPrice)} per {selected.unitLabel}. Suggested collection {app.money(suggested)}.</p>}
+        {selected && <p className="text-sm text-stone-600">{pricingLabel(selected.pricingMode)} · {app.money(selected.unitPrice)} / {selected.unitLabel}. {t('activitySuggested')} {app.money(suggested)}.</p>}
         <Field label={`${t('fieldQuantity')} (${selected?.unitLabel ?? t('remainUnits')})`}><NumberInput value={quantity} onValueChange={setQuantity} /></Field>
         <Field label={t('fieldAmount')}><NumberInput value={amount} onValueChange={setAmount} /></Field>
         <Field label={t('fieldPayment')}>
@@ -73,7 +73,7 @@ export function ActivitiesPage() {
           const result = await app.sendActivity({ activityTypeId, quantity, amount, paymentMethod, occurredAt, notes, correctsId: corrects?.id })
           setLoading(false)
           if (result.ok) navigate('/employee/submissions')
-        }}>Submit for approval</Button>
+        }}>{t('activitySubmit')}</Button>
       </Panel>
     </div>
   )

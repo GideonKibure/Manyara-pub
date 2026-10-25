@@ -1,19 +1,23 @@
 import { useState } from 'react'
-import { Download } from 'lucide-react'
+import { Download, Package } from 'lucide-react'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
+import { ChainScroll } from '@/components/ui/ChainScroll'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import { formatDate } from '@/utils/dates'
 import { cogsTotals } from '@/features/dayClose/cogs'
 import { DebtPayDialog } from '@/features/dayClose/DebtCard'
 import { debtPaid, debtRemaining, debtStatus, setDebtPayment } from '@/features/dayClose/debts'
+import { cogsPdfLabels, downloadCogsDayPdf } from '@/features/reports/dayPdfs'
 import { downloadStyledPdf, type StyledReport } from '@/utils/pdf'
 import { cn } from '@/utils/cn'
-import type { Database, DayDebt, SalesTransaction } from '@/types'
+import type { CogsExpenseLine, CogsMobileItem, Database, DayDebt, SalesTransaction } from '@/types'
 import { snapshotFor } from '@/features/inventory/stock'
 
 export interface SalesDayRow {
+  productId?: string
   name: string
   remaining: number
   sold: number
@@ -83,6 +87,7 @@ export function reportFromCount(db: Pick<Database, 'products' | 'sales' | 'movem
       const price = item?.unitPrice ?? product.sellingPrice
       const cost = item?.unitCost ?? product.costPrice
       return {
+        productId: product.id,
         name: product.name,
         remaining,
         sold: qty,
@@ -238,17 +243,74 @@ export function SalesDayReport({
   )
 }
 
+export function CogsSoldPane({ rows }: { rows: SalesDayRow[] }) {
+  const app = useApp()
+  const { t } = useI18n()
+  const soldRows = rows.filter((row) => row.sold > 0).sort((a, b) => b.sold - a.sold || b.amount - a.amount)
+  const soldTotal = soldRows.reduce((sum, row) => sum + row.sold, 0)
+  return (
+    <section className="cogs-sold-screen">
+      <div className="cogs-sold-toolbar">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-800">{t('remainPdfSoldTitle')}</p>
+          <p className="mt-0.5 text-xs text-stone-500">
+            {soldRows.length} · {soldTotal} {t('remainQty').toLowerCase()}
+          </p>
+        </div>
+        <p className="shrink-0 text-sm font-semibold tabular-nums text-ink">
+          {app.money(soldRows.reduce((sum, row) => sum + row.amount, 0))}
+        </p>
+      </div>
+      <ChainScroll className="cogs-sold-scroll">
+        {soldRows.map((row) => {
+          const product = app.products.find((item) => item.id === row.productId || item.name === row.name)
+          return (
+            <article key={`${row.productId ?? row.name}`} className="cogs-sold-row">
+              <ProductThumb src={product?.imageUrl} name={row.name} className="h-11 w-11 shrink-0 rounded-xl" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink">{row.name}</p>
+                <p className="mt-0.5 text-[11px] text-stone-500">
+                  {t('remainQty')} {row.sold}
+                  <span className="px-1 text-stone-300">·</span>
+                  {t('remainLeft')} {row.remaining}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-semibold tabular-nums text-ink">{app.money(row.amount)}</p>
+                <p className={cn('text-[11px] font-semibold tabular-nums', row.profit < 0 ? 'text-rose-700' : 'text-emerald-800')}>
+                  {app.money(row.profit)}
+                </p>
+              </div>
+            </article>
+          )
+        })}
+        {!soldRows.length ? (
+          <div className="grid place-items-center px-4 py-8 text-center">
+            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-amber-100 text-amber-800">
+              <Package className="h-5 w-5" />
+            </span>
+            <p className="mt-3 text-sm text-stone-500">{t('remainEmptyToday')}</p>
+          </div>
+        ) : null}
+      </ChainScroll>
+    </section>
+  )
+}
+
 export function CogsSheet({
   rows,
   day,
   expenses,
+  expenseItems = [],
   debts,
   mobile,
+  mobileItems = [],
   staff,
   approved = false,
   canPay = false,
   asAdmin = false,
   payBusy = '',
+  showSold = true,
   onPay,
   onApprovePayment,
   onRejectPayment,
@@ -256,14 +318,17 @@ export function CogsSheet({
   rows: SalesDayRow[]
   day: string
   expenses: number
+  expenseItems?: CogsExpenseLine[]
   debts: DayDebt[]
   mobile: number
+  mobileItems?: CogsMobileItem[]
   staff?: string
   approved?: boolean
   canPay?: boolean
   asAdmin?: boolean
   payBusy?: string
-  onPay?: (item: DayDebt, paidAmount: number) => void
+  showSold?: boolean
+  onPay?: (item: DayDebt, paidAmount: number) => void | boolean | Promise<void | boolean>
   onApprovePayment?: (item: DayDebt) => void
   onRejectPayment?: (item: DayDebt) => void
 }) {
@@ -288,58 +353,20 @@ export function CogsSheet({
     { label: t('cogsCash'), amount: totals.cash },
     { label: t('cogsNet'), amount: totals.net, emphasis: true },
   ]
-
   const download = () => {
-    downloadStyledPdf(`cogs-${day}.pdf`, {
-      title: t('cogsSheetTitle'),
-      subtitle: `${app.settings.businessName}${staff ? ` · ${staff}` : ''}`,
-      dateLabel: formatDate(day),
-      stamp: approved ? t('statusApproved').toUpperCase() : t('statusPending').toUpperCase(),
-      kpis: [
-        { label: t('remainRevenue'), value: app.money(totals.sales) },
-        { label: t('cogsCost'), value: app.money(totals.cogs) },
-        { label: t('cogsCash'), value: app.money(totals.cash) },
-        { label: t('cogsNet'), value: app.money(totals.net) },
-      ],
-      tables: [
-        {
-          title: t('remainPdfSoldTitle'),
-          columns: [
-            { header: t('navProducts'), width: 0.4 },
-            { header: t('remainQty'), width: 0.15, align: 'right' },
-            { header: t('remainRevenue'), width: 0.22, align: 'right' },
-            { header: t('cogsCost'), width: 0.23, align: 'right' },
-          ],
-          rows: rows.filter((row) => row.sold > 0).map((row) => [row.name, String(row.sold), app.money(row.amount), app.money(row.amount - row.profit)]),
-        },
-        {
-          title: t('cogsStepDebts'),
-          columns: [
-            { header: t('cogsCustomer'), width: 0.28 },
-            { header: t('cogsDebtAmount'), width: 0.18, align: 'right' },
-            { header: t('cogsDebtPaidAmount'), width: 0.18, align: 'right' },
-            { header: t('cogsDebtRemaining'), width: 0.18, align: 'right' },
-            { header: t('labelStatus'), width: 0.18 },
-          ],
-          rows: debts.length
-            ? debts.map((item) => [
-              item.customerName,
-              app.money(item.amount),
-              app.money(debtPaid(item)),
-              app.money(debtRemaining(item)),
-              debtStatus(item) === 'approved' ? t('cogsDebtPaid') : debtStatus(item) === 'pending' ? t('cogsDebtAwaiting') : t('cogsDebtUnpaid'),
-            ])
-            : [['—', app.money(0), app.money(0), app.money(0), t('cogsNoDebts')]],
-        },
-        {
-          title: t('cogsSheetTitle'),
-          columns: [
-            { header: t('summaryCol'), width: 0.6 },
-            { header: t('cogsDebtAmount'), width: 0.4, align: 'right' },
-          ],
-          rows: lines.map((line) => [line.label, app.money(line.amount)]),
-        },
-      ],
+    downloadCogsDayPdf({
+      day,
+      business: app.settings.businessName,
+      staff,
+      approved,
+      rows,
+      expenses: expenseItems,
+      expenseTotal: expenses,
+      debts,
+      mobileItems,
+      mobile,
+      money: app.money,
+      ...cogsPdfLabels(t),
     })
   }
 
@@ -375,6 +402,7 @@ export function CogsSheet({
         </div>
       </div>
       <div className="space-y-4 p-3 sm:p-4">
+        {showSold ? <CogsSoldPane rows={rows} /> : null}
         <div className="overflow-hidden rounded-[1.35rem] border border-[#e6e0d6] bg-white">
           {lines.map((line, index) => (
             <div
@@ -413,7 +441,7 @@ export function CogsSheet({
                 const paid = debtPaid(item)
                 const busy = Boolean(item.id && payBusy === item.id)
                 return (
-                  <li key={item.id ?? `${item.customerName}-${index}`} className="rounded-2xl border border-[#efe9df] bg-[#faf7f2] p-3">
+                  <li key={item.id ?? `${item.customerName}-${index}`} className="rounded-[1.2rem] border border-white/80 bg-gradient-to-br from-white to-[#faf7f2] p-3 shadow-[0_8px_18px_rgba(28,25,23,0.05)]">
                     <div className="flex items-start justify-between gap-3">
                       <span className="min-w-0">
                         <span className="block font-medium text-ink">{item.customerName}</span>
@@ -436,11 +464,8 @@ export function CogsSheet({
                         </span>
                       </span>
                       <span className="flex shrink-0 flex-col items-stretch gap-1.5">
-                        {canPay && remaining > 0 && (
-                          <Button size="sm" variant="gold" className="rounded-full px-3" onClick={() => setPaying(item)}>{t('cogsDebtPaid')}</Button>
-                        )}
-                        {asAdmin && paid > 0 && (
-                          <Button size="sm" variant="secondary" className="rounded-full px-3" onClick={() => setPaying(item)}>{t('edit')}</Button>
+                        {canPay && (
+                          <Button size="sm" variant="gold" className="rounded-full px-3" onClick={() => setPaying(item)}>{t('billUpdate')}</Button>
                         )}
                         {asAdmin && paid > 0 && status !== 'pending' && (
                           <Button size="sm" variant="danger" className="rounded-full px-3" loading={busy} onClick={() => onRejectPayment?.(item)}>{t('cogsDebtMarkUnpaid')}</Button>
@@ -468,9 +493,15 @@ export function CogsSheet({
           open={Boolean(paying)}
           asAdmin={asAdmin}
           onClose={() => setPaying(null)}
-          onConfirm={(paidAmount) => {
-            if (!paying) return
-            onPay?.(setDebtPayment(paying, paidAmount, asAdmin), paidAmount)
+          onConfirm={(paidAmount, details) => {
+            if (!paying) return false
+            const next = setDebtPayment({
+              ...paying,
+              customerName: details?.customerName ?? paying.customerName,
+              amount: details?.amount ?? paying.amount,
+              products: details?.products ?? paying.products,
+            }, paidAmount, asAdmin)
+            return onPay?.(next, paidAmount)
           }}
         />
       </div>

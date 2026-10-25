@@ -28,7 +28,7 @@ export function pricingLabel(mode: PricingMode) {
 }
 
 export function saleTotal(items: Array<{ quantity: number; unitPrice: number }>) {
-  return items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
+  return items.reduce((sum, item) => sum + Math.round(item.quantity * item.unitPrice), 0)
 }
 
 export function billBalance(sale: { items: Array<{ quantity: number; unitPrice: number }>; amountPaid?: number }) {

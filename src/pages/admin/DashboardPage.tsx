@@ -1,13 +1,21 @@
 import { Link } from 'react-router-dom'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ProductName } from '@/components/ProductPicker'
+import { PersonPhoto, ProductName, ProductThumb } from '@/components/ProductPicker'
+import { ChainScroll } from '@/components/ui/ChainScroll'
 import { PageHeader, Panel, StatCard, StockBadge } from '@/components/ui/Feedback'
 import { DashboardCharts } from '@/features/reports/DashboardCharts'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
+import { cn } from '@/utils/cn'
 import { formatDateTime } from '@/utils/dates'
 
 const axis = { fontSize: 11, fill: '#78716c' }
+
+function feedTone(action: string) {
+  if (/reject|cancel|delete|remove/i.test(action)) return 'warn'
+  if (/approve|paid|receive/i.test(action)) return 'ok'
+  return 'gold'
+}
 
 export function DashboardPage() {
   const { dashboard, money, settings } = useApp()
@@ -77,36 +85,62 @@ export function DashboardPage() {
       </Panel>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel>
-          <h2 className="mb-3 text-base font-semibold">{t('dashRecent')}</h2>
-          <ul className="divide-y divide-line">
-            {dashboard.recent.map((item) => (
-              <li key={item.id} className="py-3">
-                <p className="text-sm font-medium leading-5">{item.summary}</p>
-                <p className="mt-1 text-xs text-stone-500">{item.actor} · {formatDateTime(item.at)}</p>
-              </li>
-            ))}
-            {!dashboard.recent.length && <li className="py-3 text-sm text-stone-500">{t('dashNoneSales')}</li>}
-          </ul>
-        </Panel>
-        <Panel>
-          <div className="mb-3 flex items-baseline justify-between gap-3">
+        <Panel className="dash-list-screen">
+          <div className="dash-list-head flex items-baseline justify-between gap-3">
             <h2 className="text-base font-semibold">{t('dashAlerts')}</h2>
             <p className="text-sm font-semibold tabular-nums text-ink">{dashboard.lowProducts.length}</p>
           </div>
-          {dashboard.lowProducts.length ? (
-            <div className="grid gap-2">
-              {dashboard.lowProducts.map((product) => (
-                <div key={product.id} className="flex items-center gap-3 rounded-xl bg-stone-50 px-3 py-2">
-                  <ProductName name={product.name} src={product.imageUrl} className="min-w-0 flex-1 font-medium" />
-                  <span className="shrink-0 text-lg font-semibold tabular-nums text-ink">{product.available}</span>
-                  <StockBadge level={product.level} />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-stone-500">{t('dashNoneAlerts')}</p>
-          )}
+          <ChainScroll className="dash-list-scroll">
+            {dashboard.lowProducts.length ? (
+              <div className="grid gap-2">
+                {dashboard.lowProducts.map((product) => (
+                  <div key={product.id} className="flex items-center gap-3 rounded-xl bg-stone-50 px-3 py-2">
+                    <ProductName name={product.name} src={product.imageUrl} className="min-w-0 flex-1 font-medium" />
+                    <span className="shrink-0 text-lg font-semibold tabular-nums text-ink">{product.available}</span>
+                    <StockBadge level={product.level} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-stone-500">{t('dashNoneAlerts')}</p>
+            )}
+          </ChainScroll>
+        </Panel>
+        <Panel className="dash-list-screen dash-feed">
+          <div className="dash-feed-head">
+            <h2 className="dash-list-head mb-0">{t('dashRecent')}</h2>
+            <span className="dash-feed-count">{dashboard.recent.length}</span>
+          </div>
+          <ChainScroll className="dash-list-scroll">
+            <ol className="dash-feed-list">
+              {dashboard.recent.map((item) => {
+                const tone = feedTone(item.action)
+                return (
+                  <li key={item.id} className={cn('dash-feed-item', `is-${tone}`)}>
+                    <span className="dash-feed-rail" aria-hidden="true" />
+                    <span className="dash-feed-media">
+                      {item.productName ? (
+                        <ProductThumb src={item.productImage} name={item.productName} className="dash-feed-product" />
+                      ) : (
+                        <PersonPhoto src={item.actorImage} name={item.actor} className="dash-feed-person is-solo" />
+                      )}
+                      {item.productName ? (
+                        <PersonPhoto src={item.actorImage} name={item.actor} className="dash-feed-person" />
+                      ) : null}
+                    </span>
+                    <span className="dash-feed-copy">
+                      <span className="dash-feed-meta">
+                        <span className="dash-feed-actor">{item.actor}</span>
+                        <span>{formatDateTime(item.at)}</span>
+                      </span>
+                      <p className="dash-feed-summary">{item.summary}</p>
+                    </span>
+                  </li>
+                )
+              })}
+              {!dashboard.recent.length && <li className="py-6 text-center text-sm text-stone-500">{t('dashNoneSales')}</li>}
+            </ol>
+          </ChainScroll>
         </Panel>
       </div>
     </div>

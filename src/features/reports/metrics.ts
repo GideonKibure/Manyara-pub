@@ -1,6 +1,6 @@
 import { allSnapshots, snapshotFor } from '@/features/inventory/stock'
 import { pricesOnDay } from '@/features/products/priceHistory'
-import type { Database, SalesItem, SalesTransaction, StockSnapshot } from '@/types'
+import type { AuditLog, Database, Product, SalesItem, SalesTransaction, StockSnapshot } from '@/types'
 import {
   asDateKey,
   eachDateKey,
@@ -62,7 +62,17 @@ export interface DashboardData {
   movementTrend: Array<{ key: string; label: string; received: number; sold: number }>
   breakdown: Array<{ name: string; value: number }>
   lowProducts: Array<{ id: string; name: string; imageUrl?: string; available: number; minimum: number; level: StockSnapshot['level'] }>
-  recent: Array<{ id: string; at: string; summary: string; action: string; actor: string }>
+  recent: Array<{
+    id: string
+    at: string
+    summary: string
+    action: string
+    actor: string
+    actorId?: string
+    actorImage?: string
+    productName?: string
+    productImage?: string
+  }>
 }
 
 function approvedSales(db: Database) {
@@ -110,6 +120,11 @@ function remainingSaleIdsOn(db: Pick<Database, 'dayCloses'>, day: string) {
   )
 }
 
+function countedInCogsLines(db: Pick<Database, 'dayCloses'>, sale: SalesTransaction) {
+  const day = saleBusinessDay(db, sale)
+  return (db.dayCloses ?? []).some((item) => item.day === day && item.submittedBy === sale.submittedBy && (item.lines?.length ?? 0) > 0)
+}
+
 function dayTotals(db: Database, day: string): Omit<DashDayPoint, 'key' | 'label' | 'shortLabel'> {
   const products = new Map<string, DashProductPoint>()
   let sales = 0
@@ -133,7 +148,7 @@ function dayTotals(db: Database, day: string): Omit<DashDayPoint, 'key' | 'label
   }
 
   for (const sale of approvedSales(db)) {
-    if (remainingIds.has(sale.id)) continue
+    if (remainingIds.has(sale.id) || countedInCogsLines(db, sale)) continue
     if (saleBusinessDay(db, sale) !== day) continue
     if (typeof sale.settledAmount === 'number') {
       sales += sale.settledAmount
@@ -185,6 +200,33 @@ function activityOn(db: Database, key: string, code?: 'pool_table' | 'korokoro')
     .reduce((sum, activity) => sum + activity.amount, 0)
 }
 
+function productNamedIn(text: string, products: Product[]) {
+  return [...products]
+    .filter((product) => product.name.length > 1)
+    .sort((a, b) => b.name.length - a.name.length)
+    .find((product) => text.includes(product.name))
+}
+
+function productForAudit(db: Database, log: AuditLog) {
+  if (log.entityType === 'product') {
+    const match = db.products.find((item) => item.id === log.entityId)
+    if (match) return match
+  }
+  if (log.entityType === 'stock_in') {
+    const delivery = db.stockIns.find((item) => item.id === log.entityId)
+    const first = delivery?.items[0]
+    const match = first ? db.products.find((item) => item.id === first.productId) : undefined
+    if (match) return match
+  }
+  if (log.entityType === 'sale') {
+    const sale = db.sales.find((item) => item.id === log.entityId)
+    const first = sale?.items[0]
+    const match = first ? db.products.find((item) => item.id === first.productId) : undefined
+    if (match) return match
+  }
+  return productNamedIn(log.summary, db.products)
+}
+
 export function buildDashboard(db: Database, now = new Date()): DashboardData {
   const snapshots = allSnapshots(db)
   const active = db.products.filter((product) => product.isActive)
@@ -234,7 +276,7 @@ export function buildDashboard(db: Database, now = new Date()): DashboardData {
       continue
     }
     const remaining = remainingSaleIdsOn(db, day)
-    if (remaining.has(sale.id)) continue
+    if (remaining.has(sale.id) || countedInCogsLines(db, sale)) continue
     const money = sale.items.reduce((sum, item) => sum + datedItemMoney(db, item, day).revenue, 0)
     monthTotals.set(key, (monthTotals.get(key) ?? 0) + money)
   }
@@ -429,7 +471,7 @@ export function buildReport(db: Database, filters: ReportFilters): ReportData {
 
   for (const sale of approved) {
     const day = saleBusinessDay(db, sale)
-    if (remainingSaleIdsOn(db, day).has(sale.id)) continue
+    if (remainingSaleIdsOn(db, day).has(sale.id) || countedInCogsLines(db, sale)) continue
     if (typeof sale.settledAmount === 'number') {
       if (filters.categoryId !== 'all') continue
       beverageRevenue += sale.settledAmount
@@ -656,7 +698,7 @@ export function buildDayStatement(db: Database, day: string): DayStatement {
     }
   }
   for (const sale of approvedSales(db)) {
-    if (saleBusinessDay(db, sale) !== day || remainingIds.has(sale.id)) continue
+    if (saleBusinessDay(db, sale) !== day || remainingIds.has(sale.id) || countedInCogsLines(db, sale)) continue
     if (typeof sale.settledAmount === 'number') {
       salesRevenue += sale.settledAmount
       const label = sale.customerName ? `Bill payment · ${sale.customerName}` : 'Bill payment'

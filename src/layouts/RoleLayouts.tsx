@@ -114,8 +114,8 @@ export function EmployeeLayout() {
         { to: '/employee/stock-in', label: t('navStock'), icon: PackagePlus },
         { to: '/employee/sales', label: t('navSales'), icon: ShoppingCart },
         { to: '/employee/remaining', label: t('navRemaining'), icon: ClipboardCheck },
-        { to: '/employee/expenses', label: t('navExpenses'), icon: Wallet },
-        { to: '/employee/submissions', label: t('navHistory'), icon: ClipboardList },
+        { to: '/employee/bills', label: t('navBills'), icon: Receipt },
+        { to: '/employee/dashboard', label: t('navMenu'), icon: Menu, menu: true },
       ]}
     />
   )

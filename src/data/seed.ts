@@ -384,6 +384,7 @@ export function buildSeed(): Database {
       { id: local, name: 'Arusha Wholesale Drinks', phone: '+255700100003', isActive: true, createdAt: created },
     ],
     stockIns,
+    restockOrders: [],
     sales,
     movements,
     activityTypes: [
@@ -414,6 +415,7 @@ export function buildSeed(): Database {
       currencySymbol: 'TSh',
       lowStockAlerts: true,
       allowRemainingCount: false,
+      recordLookbackDays: 2,
       updatedAt: created,
     },
     counters: { stockIn: stockInCount, sale: saleCount, activity: activityCount, expense: 1, adjustment: adjustmentCount },

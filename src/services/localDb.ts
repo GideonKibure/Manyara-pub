@@ -2,6 +2,7 @@ import { buildSeed } from '@/data/seed'
 import { ensureProduct } from '@/features/products/offer'
 import { approveInvoicedDeliveries, approveRecordedSales } from '@/services/operations'
 import type { ApprovalStatus, Database, RecordKind, SalesItem, Session } from '@/types'
+import { normalizeRecordLookback } from '@/utils/dates'
 
 export const DB_VERSION = 1
 export const DB_KEY = 'manyara.db.v2'
@@ -36,23 +37,27 @@ export function normalizeStored(db: Database): Database {
     const recordKind: RecordKind = sale.recordKind === 'bill' || sale.paymentStatus !== 'paid' ? 'bill' : 'sale'
     return { ...sale, recordKind, items }
   })
+  const restockOrders = Array.isArray(db.restockOrders) ? db.restockOrders : []
   const expenses = Array.isArray(db.expenses) ? db.expenses : []
   const priceChanges = Array.isArray(db.priceChanges) ? db.priceChanges : []
   const dayCloses = (Array.isArray(db.dayCloses) ? db.dayCloses : []).map((item) => ({
     ...item,
     lines: Array.isArray(item.lines) ? item.lines : [],
     expenseItems: Array.isArray(item.expenseItems) ? item.expenseItems : [],
+    mobileItems: Array.isArray(item.mobileItems) ? item.mobileItems : [],
     expenseTotal: typeof item.expenseTotal === 'number' ? item.expenseTotal : 0,
     status: (item.status === 'approved' || item.status === 'rejected' || item.status === 'cancelled' ? item.status : 'pending') as ApprovalStatus,
   }))
   const counters = { ...db.counters, expense: typeof db.counters?.expense === 'number' ? db.counters.expense : 0 }
-  if (!Array.isArray(db.expenses) || !Array.isArray(db.dayCloses) || !Array.isArray(db.priceChanges) || counters.expense !== db.counters?.expense) changed = true
+  if (!Array.isArray(db.restockOrders) || !Array.isArray(db.expenses) || !Array.isArray(db.dayCloses) || !Array.isArray(db.priceChanges) || counters.expense !== db.counters?.expense) changed = true
   if (dayCloses.some((item, index) => item.expenseTotal !== db.dayCloses?.[index]?.expenseTotal || item.status !== db.dayCloses?.[index]?.status)) changed = true
-  const settings = db.settings?.allowRemainingCount === true || db.settings?.allowRemainingCount === false
+  const lookback = normalizeRecordLookback(db.settings?.recordLookbackDays)
+  const remainingOn = db.settings?.allowRemainingCount === true || db.settings?.allowRemainingCount === false
+  const settings = remainingOn && db.settings.recordLookbackDays === lookback
     ? db.settings
-    : { ...db.settings, allowRemainingCount: false }
+    : { ...db.settings, allowRemainingCount: db.settings?.allowRemainingCount === true, recordLookbackDays: lookback }
   if (settings !== db.settings) changed = true
-  return changed ? { ...db, products, sales, expenses, dayCloses, priceChanges, counters, settings } : db
+  return changed ? { ...db, products, sales, restockOrders, expenses, dayCloses, priceChanges, counters, settings } : db
 }
 
 const DROPPED_BILL = 'manyara.drop20k.v1'

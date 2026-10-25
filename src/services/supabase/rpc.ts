@@ -126,6 +126,23 @@ export async function adminSetDebtPaymentRpc(closeId: string, debtId: string, pa
   return client.rpc('admin_set_debt_payment', { p_close_id: closeId, p_debt_id: debtId, p_paid: Math.max(0, Math.floor(paidAmount || 0)) })
 }
 
+export async function setCogsDebtPaymentRpc(
+  closeId: string,
+  debtId: string,
+  paidAmount: number,
+  details?: { customerName?: string; amount?: number; products?: string },
+) {
+  const client = await requireClient()
+  return client.rpc('set_cogs_debt_payment', {
+    p_close_id: closeId,
+    p_debt_id: debtId,
+    p_paid: Math.max(0, Math.floor(paidAmount || 0)),
+    p_customer: details?.customerName ?? '',
+    p_amount: Math.max(0, Math.floor(details?.amount || 0)),
+    p_products: details?.products ?? '',
+  })
+}
+
 export async function adminApplyPriceChange(productId: string, day: string, cost: number, selling: number) {
   const client = await requireClient()
   return client.rpc('admin_apply_price_change', { p_product: productId, p_day: day, p_cost: cost, p_selling: selling })
@@ -134,6 +151,21 @@ export async function adminApplyPriceChange(productId: string, day: string, cost
 export async function submitStockIn(payload: Record<string, unknown>) {
   const client = await requireClient()
   return client.rpc('submit_stock_in', { p_payload: payload })
+}
+
+export async function saveRestockOrderRpc(id: string | null, payload: Record<string, unknown>) {
+  const client = await requireClient()
+  return client.rpc('save_restock_order', { p_id: id, p_payload: payload })
+}
+
+export async function setRestockOrderStatusRpc(id: string, status: string) {
+  const client = await requireClient()
+  return client.rpc('set_restock_order_status', { p_id: id, p_status: status })
+}
+
+export async function setRestockItemReceivedRpc(itemId: string, received: boolean) {
+  const client = await requireClient()
+  return client.rpc('set_restock_item_received', { p_item_id: itemId, p_received: received })
 }
 
 export async function submitSale(payload: Record<string, unknown>) {

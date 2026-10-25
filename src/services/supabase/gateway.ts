@@ -11,6 +11,7 @@ import {
   unitSchema,
 } from '@/schemas'
 import { ensureProduct } from '@/features/products/offer'
+import { roundBuyingPrice } from '@/utils/money'
 import { clearSupabaseAuthStorage, supabase, supabaseAnonKey, supabaseUrl } from '@/lib/supabase'
 import {
   adjustInventory,
@@ -37,6 +38,7 @@ import {
   adminApproveDayClose,
   reviewDebtPaymentRpc,
   adminSetDebtPaymentRpc,
+  setCogsDebtPaymentRpc,
   adminApplyPriceChange,
   staffDirectory,
   submitActivity,
@@ -46,6 +48,9 @@ import {
   appendBillItem,
   submitSale,
   submitRemainingCount as submitRemainingCountRemoteRpc,
+  saveRestockOrderRpc,
+  setRestockItemReceivedRpc,
+  setRestockOrderStatusRpc,
   submitStockIn,
   updateSale,
   updateStockIn,
@@ -64,6 +69,7 @@ import type {
   DayDebt,
   CogsExpenseLine,
   CogsLine,
+  CogsMobileItem,
   EmployeeDraft,
   EmployeePatch,
   InventoryMovement,
@@ -73,11 +79,14 @@ import type {
   ProductPriceChange,
   Profile,
   RecordDeleteKind,
+  RestockOrderDraft,
+  RestockOrderStatus,
   SaleDraft,
   SalesTransaction,
   StockInDraft,
   StockInTransaction,
 } from '@/types'
+import { normalizeRecordLookback } from '@/utils/dates'
 
 type Row = Record<string, unknown>
 
@@ -93,7 +102,7 @@ export function errorText(error: { message?: string } | null, fallback = 'Someth
   const raw = error?.message?.trim()
   if (!raw) return fallback
   if (/schema cache|does not exist|Could not find the function|relation .* does not exist/i.test(raw)) {
-    return 'The Supabase project is missing a Manyara Pub table or function. Run supabase/migrations/001_initial.sql if this is a new project, then paste and run 023_live_catchup.sql through 029_admin_employee.sql in the SQL editor.'
+    return 'The Supabase project is missing a Manyara Pub table or function. In the SQL editor run 001_initial.sql only if this is a new empty project, then paste and run 023_live_catchup.sql through 048_employee_set_cogs_debt.sql in order.'
   }
   if (/UPDATE requires a WHERE clause|DELETE requires a WHERE clause/i.test(raw)) {
     return 'Clearing business data needs the latest SQL. Paste and run supabase/migrations/028_clear_business_data.sql in the Supabase SQL editor, then try again.'
@@ -201,6 +210,22 @@ function mapExpenseItems(value: unknown): CogsExpenseLine[] {
   })
 }
 
+function mapMobileItems(value: unknown, fallbackDay: string, fallbackTotal: number): CogsMobileItem[] {
+  if (Array.isArray(value)) {
+    const items = value.flatMap((item) => {
+      if (!item || typeof item !== 'object') return []
+      const row = item as Row
+      const amount = num(row, 'amount')
+      const date = str(row, 'date').slice(0, 10)
+      if (amount < 1) return []
+      return [{ id: str(row, 'id') || undefined, amount, date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : fallbackDay }]
+    })
+    if (items.length) return items
+  }
+  if (fallbackTotal >= 1) return [{ amount: fallbackTotal, date: fallbackDay }]
+  return []
+}
+
 export function blankDatabase(): Database {
   return {
     version: 1,
@@ -213,6 +238,7 @@ export function blankDatabase(): Database {
     priceChanges: [],
     suppliers: [],
     stockIns: [],
+    restockOrders: [],
     sales: [],
     movements: [],
     activityTypes: [],
@@ -227,6 +253,7 @@ export function blankDatabase(): Database {
       currencySymbol: 'TSh',
       lowStockAlerts: true,
       allowRemainingCount: false,
+      recordLookbackDays: 2,
       updatedAt: new Date().toISOString(),
     },
     counters: { stockIn: 0, sale: 0, activity: 0, expense: 0, adjustment: 0 },
@@ -318,6 +345,8 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
     directory,
     dayCloses,
     priceChanges,
+    restockOrders,
+    restockItems,
   ] = await Promise.all([
     dbClient.from('profiles').select('*'),
     dbClient.from('categories').select('*'),
@@ -338,6 +367,8 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
     staffDirectory(),
     dbClient.from('day_closes').select('*'),
     dbClient.from('product_price_changes').select('*'),
+    dbClient.from('restock_orders').select('*'),
+    dbClient.from('restock_order_items').select('*'),
   ])
 
   const firstError = [
@@ -360,6 +391,8 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
     directory.error,
     missingRelation(dayCloses.error) ? null : dayCloses.error,
     missingRelation(priceChanges.error) ? null : priceChanges.error,
+    missingRelation(restockOrders.error) ? null : restockOrders.error,
+    missingRelation(restockItems.error) ? null : restockItems.error,
   ].find(Boolean)
   if (firstError) return { ok: false, error: errorText(firstError) }
 
@@ -494,6 +527,39 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
         createdAt: str(row, 'created_at'),
       })),
       stockIns: stockTransactions.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
+      restockOrders: missingRelation(restockOrders.error)
+        ? []
+        : rowsOf(restockOrders.data)
+            .map((row) => ({
+              id: str(row, 'id'),
+              code: str(row, 'code'),
+              notes: str(row, 'notes'),
+              status:
+                str(row, 'status') === 'received'
+                  ? ('received' as const)
+                  : str(row, 'status') === 'partial'
+                    ? ('partial' as const)
+                    : ('not_received' as const),
+              submittedBy: str(row, 'submitted_by'),
+              submittedAt: str(row, 'submitted_at'),
+              receivedAt: optional(row, 'received_at'),
+              receivedBy: optional(row, 'received_by'),
+              stockInId: optional(row, 'stock_in_id'),
+              receivedEditUsed: bool(row, 'received_edit_used'),
+              items: rowsOf(restockItems.data)
+                .filter((item) => str(item, 'order_id') === str(row, 'id'))
+                .map((item) => ({
+                  id: str(item, 'id'),
+                  productId: str(item, 'product_id'),
+                  receivedQuantity: num(item, 'received_quantity'),
+                  receiveUnitId: str(item, 'receive_unit_id'),
+                  conversionFactor: num(item, 'conversion_factor'),
+                  stockQuantity: num(item, 'stock_quantity'),
+                  received: bool(item, 'received'),
+                  receivedAt: optional(item, 'received_at'),
+                })),
+            }))
+            .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
       sales: saleTransactions.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
       availability,
       movements: rowsOf(movements.data).map(
@@ -577,6 +643,7 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
                 debts: mapDebts(row.debts),
                 lines: mapLines(row.lines),
                 expenseItems: mapExpenseItems(row.expense_items),
+                mobileItems: mapMobileItems(row.mobile_items, str(row, 'day').slice(0, 10), num(row, 'mobile_received')),
                 mobileReceived: num(row, 'mobile_received'),
                 expenseTotal: num(row, 'expense_total'),
                 status: str(row, 'status') === 'approved' ? 'approved' : 'pending',
@@ -619,6 +686,7 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
             currencySymbol: str(settingsRow, 'currency_symbol', 'TSh'),
             lowStockAlerts: settingsRow.low_stock_alerts !== false,
             allowRemainingCount: settingsRow.allow_remaining_count === true,
+            recordLookbackDays: normalizeRecordLookback(settingsRow.record_lookback_days),
             updatedAt: str(settingsRow, 'updated_at'),
           }
         : base.settings,
@@ -675,7 +743,8 @@ export async function changePasswordRemote(email: string, current: string, passw
   if (check.error) return fail('The current password is incorrect.')
   const { error } = await client().auth.updateUser({ password: parsed.data })
   if (error) return fail(errorText(error))
-  return { ok: true, message: 'Password updated.' }
+  await signOutRemote()
+  return { ok: true, message: 'Password updated. Sign in with the new password.' }
 }
 
 export async function saveProfileRemote(input: { fullName: string; phone: string; imageUrl?: string }): Promise<ActionResult> {
@@ -768,10 +837,10 @@ function productPayload(input: ProductDraft) {
     stock_unit_id: input.stockUnitId,
     receive_unit_id: input.receiveUnitId,
     conversion_factor: input.conversionFactor,
-    cost_price: input.costPrice,
+    cost_price: roundBuyingPrice(input.costPrice),
     selling_price: input.sellingPrice,
     size_mode: input.sizeMode,
-    sizes: input.sizes,
+    sizes: input.sizes.map((size) => ({ ...size, cost: roundBuyingPrice(size.cost) })),
     cup_price: input.cupPrice,
     half_price: input.halfPrice,
     min_stock: input.minStock,
@@ -912,6 +981,34 @@ export async function deleteEmployeeRemote(id: string): Promise<ActionResult> {
   return { ok: true, message: 'Employee deleted.' }
 }
 
+export async function saveRestockOrderRemote(draft: RestockOrderDraft): Promise<ActionResult> {
+  const result = await saveRestockOrderRpc(draft.id ?? null, {
+    notes: draft.notes ?? '',
+    items: draft.items,
+  })
+  if (result.error) return fail(errorText(result.error))
+  return { ok: true, message: draft.id ? 'Order saved.' : 'Order saved. Mark it received when the stock arrives.' }
+}
+
+export async function setRestockOrderStatusRemote(id: string, status: RestockOrderStatus): Promise<ActionResult> {
+  const result = await setRestockOrderStatusRpc(id, status)
+  if (result.error) return fail(errorText(result.error))
+  return {
+    ok: true,
+    message: status === 'received' ? 'Order marked received. Confirmed stock was updated.' : 'Order marked not received. Stock in was reversed.',
+  }
+}
+
+export async function setRestockItemStatusRemote(orderId: string, itemId: string, received: boolean): Promise<ActionResult> {
+  void orderId
+  const result = await setRestockItemReceivedRpc(itemId, received)
+  if (result.error) return fail(errorText(result.error))
+  return {
+    ok: true,
+    message: received ? 'Product marked received. Confirmed stock was updated.' : 'Received products cannot be unmarked.',
+  }
+}
+
 export async function sendStockInRemote(draft: StockInDraft): Promise<ActionResult> {
   const result = await submitStockIn({
     items: draft.items,
@@ -1038,7 +1135,7 @@ export async function adjustRemote(draft: AdjustmentDraft): Promise<ActionResult
   return { ok: true, message: `${String(result.data ?? 'Adjustment')} recorded.` }
 }
 
-export async function saveSettingsRemote(input: { businessName: string; currency: string; currencySymbol: string; lowStockAlerts: boolean; allowRemainingCount: boolean }): Promise<ActionResult> {
+export async function saveSettingsRemote(input: { businessName: string; currency: string; currencySymbol: string; lowStockAlerts: boolean; allowRemainingCount: boolean; recordLookbackDays: 1 | 2 | 3 | 5 | 7 }): Promise<ActionResult> {
   const parsed = settingsSchema.safeParse(input)
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? 'Check the settings.')
   const { error } = await client()
@@ -1049,6 +1146,7 @@ export async function saveSettingsRemote(input: { businessName: string; currency
       currency_symbol: parsed.data.currencySymbol,
       low_stock_alerts: parsed.data.lowStockAlerts,
       allow_remaining_count: parsed.data.allowRemainingCount,
+      record_lookback_days: parsed.data.recordLookbackDays,
     })
     .eq('id', 1)
   if (error) return fail(errorText(error))
@@ -1106,6 +1204,7 @@ export async function saveDayCloseRemote(input: {
   expenseTotal?: number
   lines?: CogsLine[]
   expenseItems?: CogsExpenseLine[]
+  mobileItems?: CogsMobileItem[]
   submittedBy?: string
 }): Promise<ActionResult> {
   const result = await saveDayCloseRpc({
@@ -1116,6 +1215,7 @@ export async function saveDayCloseRemote(input: {
     expenseTotal: input.expenseTotal ?? 0,
     lines: input.lines ?? [],
     expenseItems: input.expenseItems ?? [],
+    mobileItems: input.mobileItems ?? [],
     submittedBy: input.submittedBy ?? null,
   })
   if (result.error) return fail(errorText(result.error))
@@ -1128,6 +1228,7 @@ export async function updateDayCloseRemote(id: string, input: {
   expenseTotal: number
   lines?: CogsLine[]
   expenseItems?: CogsExpenseLine[]
+  mobileItems?: CogsMobileItem[]
 }): Promise<ActionResult> {
   const result = await adminUpdateDayClose(id, input)
   if (result.error) return fail(errorText(result.error))
@@ -1152,9 +1253,17 @@ export async function reviewDebtPaymentRemote(closeId: string, debtId: string, a
   return { ok: true, message: approve ? 'Debt payment approved.' : 'Debt payment rejected.' }
 }
 
-export async function setDayCloseDebtPaymentRemote(closeId: string, debtId: string, paidAmount: number): Promise<ActionResult> {
-  const result = await adminSetDebtPaymentRpc(closeId, debtId, paidAmount)
-  if (result.error) return fail(errorText(result.error))
+export async function setDayCloseDebtPaymentRemote(
+  closeId: string,
+  debtId: string,
+  paidAmount: number,
+  details?: { customerName?: string; amount?: number; products?: string },
+): Promise<ActionResult> {
+  const result = await setCogsDebtPaymentRpc(closeId, debtId, paidAmount, details)
+  if (result.error) {
+    const fallback = await adminSetDebtPaymentRpc(closeId, debtId, paidAmount)
+    if (fallback.error) return fail(errorText(result.error))
+  }
   return { ok: true, message: paidAmount > 0 ? 'Debt payment updated.' : 'Debt marked unpaid.' }
 }
 
@@ -1164,7 +1273,7 @@ export async function applyPriceChangeRemote(input: {
   costPrice: number
   sellingPrice: number
 }): Promise<ActionResult> {
-  const result = await adminApplyPriceChange(input.productId, input.day, Math.round(input.costPrice), Math.round(input.sellingPrice))
+  const result = await adminApplyPriceChange(input.productId, input.day, roundBuyingPrice(input.costPrice), Math.round(input.sellingPrice))
   if (result.error) return fail(errorText(result.error))
   const updated = typeof result.data === 'number' ? result.data : 0
   return { ok: true, message: `Prices saved. ${updated} COGS sheet${updated === 1 ? '' : 's'} updated.` }

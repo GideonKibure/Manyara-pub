@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ProductPicker, ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
@@ -8,17 +9,38 @@ import { PageHeader, Panel } from '@/components/ui/Feedback'
 import { Modal } from '@/components/ui/Modal'
 import { StockInPdfButton } from '@/features/stockIn/StockInPdfButton'
 import { StockInRecordCard } from '@/features/stockIn/StockInRecordCard'
-import { stockInMatchesQuery } from '@/features/stockIn/stockInSearch'
+import { stockInMatchesQuery, stockInProductNames } from '@/features/stockIn/stockInSearch'
 import { StockInDetail } from '@/features/transactions/Details'
 import { sizeCost } from '@/features/products/offer'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
 import type { SaleSize, StockInTransaction } from '@/types'
-import { dateKey, employeeMinDateKey, isEmployeeAllowedDay } from '@/utils/dates'
+import { cn } from '@/utils/cn'
+import { dateKey, employeeMinDateKey, formatDate, isEmployeeAllowedDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { nextInvoiceRef } from '@/utils/invoice'
 import { stockInTotal, stockInUnits } from '@/utils/labels'
+import { roundBuyingPrice } from '@/utils/money'
+
+function monthCells(year: number, month: number) {
+  const first = new Date(year, month, 1)
+  const pad = (first.getDay() + 6) % 7
+  const days = new Date(year, month + 1, 0).getDate()
+  const cells: Array<{ key: string; day: number } | null> = []
+  for (let index = 0; index < pad; index += 1) cells.push(null)
+  for (let day = 1; day <= days; day += 1) {
+    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    cells.push({ key, day })
+  }
+  while (cells.length % 7) cells.push(null)
+  return cells
+}
+
+function monthWord(key: string) {
+  const [year, month] = key.split('-').map(Number)
+  return new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(new Date(year, month - 1, 1)).toUpperCase()
+}
 
 interface Line {
   id: string
@@ -52,14 +74,14 @@ export function StockInPage() {
   const [cost, setCost] = useState<number | null>(() => {
     const product = app.products.find((item) => item.id === (source?.items[0]?.productId ?? ''))
     if (!product) return null
-    return sizeCost(product, source?.items[0]?.sizeName)
+    return roundBuyingPrice(sizeCost(product, source?.items[0]?.sizeName))
   })
   const [lines, setLines] = useState<Line[]>(() => source?.items.map((item) => ({
     id: item.id || uid(),
     productId: item.productId,
     sizeName: item.sizeName === 'small' || item.sizeName === 'medium' || item.sizeName === 'big' ? item.sizeName : 'one',
     receivedQuantity: item.receivedQuantity,
-    costPerStockUnit: item.costPerStockUnit,
+    costPerStockUnit: roundBuyingPrice(item.costPerStockUnit),
   })) ?? [])
   const [editingLineId, setEditingLineId] = useState<string | null>(null)
   const [supplierName, setSupplierName] = useState(source?.supplierName ?? '')
@@ -70,6 +92,8 @@ export function StockInPage() {
     ?? (dayParam && /^\d{4}-\d{2}-\d{2}$/.test(dayParam) && dayParam <= dateKey() ? dayParam : dateKey()),
   )
   const [deliveryQuery, setDeliveryQuery] = useState('')
+  const [calendarCursor, setCalendarCursor] = useState(() => new Date())
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [openDelivery, setOpenDelivery] = useState<StockInTransaction | null>(null)
   const [notes, setNotes] = useState(source?.notes ?? '')
   const [usedInvoices, setUsedInvoices] = useState<string[]>([])
@@ -93,13 +117,15 @@ export function StockInPage() {
   const suppliers = app.suppliers.filter((supplier) => supplier.isActive)
   const supplierReady = supplierName.trim().length >= 2
   const employeeSubmit = app.user?.role !== 'admin'
+  const lookback = app.settings.recordLookbackDays
   const today = dateKey()
-  const minDay = employeeMinDateKey()
-  const defaultCost = selected ? sizeCost(selected, chosenSize?.name ?? sizeName) : null
+  const minDay = employeeMinDateKey(lookback)
+  const defaultCost = selected ? roundBuyingPrice(sizeCost(selected, chosenSize?.name ?? sizeName)) : null
   const preview = useMemo(() => lines.map((line) => {
     const product = app.products.find((item) => item.id === line.productId)
     const stockQuantity = line.receivedQuantity * (product?.conversionFactor ?? 1)
-    return { ...line, name: product?.name ?? t('productsProduct'), imageUrl: product?.imageUrl, stockQuantity, total: line.costPerStockUnit * stockQuantity }
+    const unitCost = roundBuyingPrice(line.costPerStockUnit)
+    return { ...line, costPerStockUnit: unitCost, name: product?.name ?? t('productsProduct'), imageUrl: product?.imageUrl, stockQuantity, total: Math.round(unitCost * stockQuantity) }
   }), [lines, app.products, t])
   const unitsTotal = stockInUnits(preview.map((line) => ({ stockQuantity: line.stockQuantity })))
   const costTotal = stockInTotal(preview.map((line) => ({ totalCost: line.total })))
@@ -109,6 +135,23 @@ export function StockInPage() {
       .filter((item) => item.submittedBy === app.user?.id && stockInMatchesQuery(item, app.products, deliveryQuery))
       .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
   }, [app.products, app.stockIns, app.user?.id, app.user?.role, deliveryQuery])
+  const calendarYear = calendarCursor.getFullYear()
+  const calendarMonth = calendarCursor.getMonth()
+  const calendarTitle = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }).format(new Date(calendarYear, calendarMonth, 1))
+  const calendarCells = useMemo(() => monthCells(calendarYear, calendarMonth), [calendarMonth, calendarYear])
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const deliveriesByDay = useMemo(() => {
+    const map = new Map<string, StockInTransaction[]>()
+    for (const item of myDeliveries) {
+      const list = map.get(item.deliveryDate) ?? []
+      list.push(item)
+      map.set(item.deliveryDate, list)
+    }
+    return map
+  }, [myDeliveries])
+  const selectedDayRows = selectedDay
+    ? (deliveriesByDay.get(selectedDay) ?? []).slice().sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+    : []
 
   function sizeOf(line: { sizeName: SaleSize }) {
     return line.sizeName === 'one' ? '' : ` · ${t(sizeLabel(line.sizeName))}`
@@ -127,6 +170,13 @@ export function StockInPage() {
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = previous }
   }, [review])
+
+  useEffect(() => {
+    if (!selectedDay || openDelivery) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previous }
+  }, [openDelivery, selectedDay])
 
   const lineCount = useRef(lines.length)
   useEffect(() => {
@@ -147,7 +197,7 @@ export function StockInPage() {
       productId: selected.id,
       sizeName: nextSize,
       receivedQuantity: quantity,
-      costPerStockUnit: cost,
+      costPerStockUnit: roundBuyingPrice(cost),
     }
     setLines((current) => {
       if (editingLineId && current.some((line) => line.id === editingLineId)) {
@@ -157,7 +207,7 @@ export function StockInPage() {
     })
     setEditingLineId(null)
     setQuantity(null)
-    setCost(sizeCost(selected, nextSize))
+    setCost(roundBuyingPrice(sizeCost(selected, nextSize)))
   }
 
   function editLine(id: string) {
@@ -166,7 +216,7 @@ export function StockInPage() {
     setProductId(line.productId)
     setSizeName(line.sizeName)
     setQuantity(line.receivedQuantity)
-    setCost(line.costPerStockUnit)
+    setCost(roundBuyingPrice(line.costPerStockUnit))
     setEditingLineId(id)
     setSearch('')
     setReview(false)
@@ -239,9 +289,9 @@ export function StockInPage() {
   return (
     <div className={preview.length ? 'pb-20 md:pb-0' : undefined}>
       <PageHeader
-        title={editing ? 'Edit stock delivery' : t('stockTitle')}
-        description={editing ? 'The invoice number stays the same. Saving updates the supplier, the date, and the products.' : employeeSubmit ? t('stockDescription') : t('stockAdminDescription')}
-        actions={<StockInPdfButton className="w-full sm:w-auto" />}
+        title={editing ? t('stockEditTitle') : t('stockTitle')}
+        description={editing ? t('stockEditBody') : employeeSubmit ? t('stockDescription') : t('stockAdminDescription')}
+        actions={<StockInPdfButton className="w-full sm:w-auto" records={myDeliveries} />}
       />
       {corrects && !correctionSent && <p className="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-950">{t('salesCorrecting')} {corrects.code}. {t('stockCorrecting')}</p>}
       <div className="grid items-start gap-4 md:grid-cols-[minmax(0,1.1fr)_minmax(16rem,0.9fr)]">
@@ -285,7 +335,7 @@ export function StockInPage() {
               value={deliveryDate}
               onChange={(event) => {
                 const next = event.target.value
-                if (employeeSubmit && !isEmployeeAllowedDay(next, source?.deliveryDate)) return
+                if (employeeSubmit && !isEmployeeAllowedDay(next, source?.deliveryDate, lookback)) return
                 setDeliveryDate(next)
               }}
             />
@@ -309,7 +359,7 @@ export function StockInPage() {
               setProductId(next)
               setSizeName(nextSize)
               setSearch('')
-              setCost(product ? sizeCost(product, nextSize) : null)
+              setCost(product ? roundBuyingPrice(sizeCost(product, nextSize)) : null)
               setQuantity(null)
               setEditingLineId(null)
             }}
@@ -320,7 +370,7 @@ export function StockInPage() {
                 {sizeChoices.map((size) => (
                   <Button key={size.name} type="button" className="w-full px-2" variant={chosenSize?.name === size.name ? 'gold' : 'secondary'} onClick={() => {
                     setSizeName(size.name)
-                    if (!editingLineId) setCost(size.cost)
+                    if (!editingLineId) setCost(roundBuyingPrice(size.cost))
                   }}>
                     {t(size.name === 'small' ? 'productsSizeSmall' : size.name === 'medium' ? 'productsSizeMedium' : 'productsSizeBig')}
                   </Button>
@@ -332,8 +382,6 @@ export function StockInPage() {
             <Field label={`${t('stockQuantity')} (${receiveUnit?.name ?? 'unit'})`}><NumberInput allowDecimal decimalPlaces={2} value={quantity} onValueChange={setQuantity} /></Field>
             <Field label={`${t('stockCost')} ${stockUnit?.abbreviation ?? 'unit'}`} hint={t('stockCostHint')}>
               <NumberInput
-                allowDecimal
-                decimalPlaces={2}
                 value={cost}
                 onValueChange={setCost}
                 placeholder={defaultCost != null ? String(defaultCost) : undefined}
@@ -344,8 +392,8 @@ export function StockInPage() {
             <div className="rounded-xl bg-stone-50 px-3 py-2 text-sm text-stone-600">
               <p className="text-xs uppercase tracking-wide text-stone-500">{t('salesPrice')}</p>
               <p className="text-lg font-semibold text-ink">{app.money(sellingPrice)}</p>
-              <p className="mt-1">{t('productsCost')} {app.money(chosenSize?.cost ?? selected.costPrice)}</p>
-              <p>{quantity || 0} {receiveUnit?.abbreviation} {t('stockAdds')} {(quantity || 0) * selected.conversionFactor} {stockUnit?.abbreviation}. {t('stockTotal')} {app.money((quantity || 0) * selected.conversionFactor * (cost || 0))}.</p>
+              <p className="mt-1">{t('productsCost')} {app.money(roundBuyingPrice(chosenSize?.cost ?? selected.costPrice))}</p>
+              <p>{quantity || 0} {receiveUnit?.abbreviation} {t('stockAdds')} {(quantity || 0) * selected.conversionFactor} {stockUnit?.abbreviation}. {t('stockTotal')} {app.money(Math.round((quantity || 0) * selected.conversionFactor * roundBuyingPrice(cost || defaultCost || 0)))}.</p>
             </div>
           )}
           {!supplierReady && <p className="text-sm text-amber-900">{t('stockSelectFirst')}</p>}
@@ -383,7 +431,7 @@ export function StockInPage() {
           </ol>
           <p className="mt-4 text-sm font-semibold">{unitsTotal} {t('remainUnits')} · {app.money(costTotal)}</p>
           <div className="mt-4 hidden md:block">
-            <Button className="w-full" variant="gold" disabled={!preview.length || !supplierReady} onClick={() => setReview(true)}>{editing ? 'Save delivery' : t('stockReview')}</Button>
+            <Button className="w-full" variant="gold" disabled={!preview.length || !supplierReady} onClick={() => setReview(true)}>{editing ? t('stockSaveDelivery') : t('stockReview')}</Button>
           </div>
         </Panel>
       </div>
@@ -394,13 +442,95 @@ export function StockInPage() {
             <p className="text-sm text-stone-500">{t('stockMyDeliveriesBody')}</p>
           </div>
           <TextInput value={deliveryQuery} onChange={(event) => setDeliveryQuery(event.target.value)} placeholder={t('searchDeliveries')} aria-label={t('searchDeliveries')} />
-          <div className="grid gap-3 lg:grid-cols-2">
-            {myDeliveries.slice(0, 8).map((item) => (
-              <StockInRecordCard key={item.id} record={item} showDate onView={setOpenDelivery} />
+          <div className="flex items-center justify-between gap-3">
+            <Button variant="secondary" size="sm" aria-label={t('tablePrev')} onClick={() => setCalendarCursor(new Date(calendarYear, calendarMonth - 1, 1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <h3 className="font-display text-lg text-ink sm:text-xl">{calendarTitle}</h3>
+            <Button variant="secondary" size="sm" aria-label={t('tableNext')} onClick={() => setCalendarCursor(new Date(calendarYear, calendarMonth + 1, 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-wide text-stone-500 sm:text-[11px]">
+            {weekdays.map((label) => (
+              <span key={label}>{label}</span>
             ))}
+          </div>
+          <div className="stock-cal">
+            {calendarCells.map((cell, index) => {
+              if (!cell) return <div key={`empty-${index}`} />
+              const deliveries = deliveriesByDay.get(cell.key) ?? []
+              const ready = deliveries.length > 0
+              const pending = deliveries.some((item) => item.status === 'pending')
+              const approved = deliveries.some((item) => item.status === 'approved')
+              const names = [...new Set(deliveries.flatMap((item) => stockInProductNames(item, app.products)))].slice(0, 1)
+              const future = cell.key > today
+              return (
+                <button
+                  key={cell.key}
+                  type="button"
+                  disabled={future}
+                  onClick={() => setSelectedDay(cell.key)}
+                  className={cn(
+                    'stock-cal-day',
+                    future && 'cursor-not-allowed opacity-40',
+                    ready ? 'glass-panel has-stock' : 'border border-dashed border-white/50 bg-white/20 text-stone-400',
+                    selectedDay === cell.key && 'ring-2 ring-amber-600',
+                    cell.key === today && !ready && 'ring-1 ring-amber-300',
+                    approved && !pending && 'bg-emerald-50/70',
+                    pending && 'bg-amber-50/80',
+                  )}
+                >
+                  <span className={cn('font-display text-lg leading-none sm:text-2xl', ready ? 'text-ink' : 'text-stone-400')}>{cell.day}</span>
+                  <span className={cn('mt-0.5 text-[9px] font-bold tracking-[0.16em] sm:text-[10px]', ready ? 'text-amber-800' : 'text-stone-400')}>{monthWord(cell.key)}</span>
+                  {ready && (
+                    <>
+                      <span className="mt-0.5 hidden w-full truncate px-0.5 text-[9px] font-medium text-ink sm:block">{names.join(', ')}</span>
+                      <span className="mt-0.5 rounded-full bg-stone-900/80 px-1.5 py-px text-[9px] font-semibold tabular-nums text-white">{deliveries.length}</span>
+                    </>
+                  )}
+                </button>
+              )
+            })}
           </div>
           {!myDeliveries.length && <p className="text-sm text-stone-500">{t('emptyDeliveries')}</p>}
         </Panel>
+      )}
+      {selectedDay && createPortal(
+        <div className="stock-day-pop">
+          <button type="button" className="stock-day-pop-scrim" aria-label={t('closeDialog')} onClick={() => setSelectedDay(null)} />
+          <div role="dialog" aria-modal="true" className="stock-day-pop-sheet">
+            <header className="stock-day-pop-head">
+              <div className="min-w-0">
+                <h2 className="font-display text-lg leading-snug text-ink">{t('stockDayTitle')}</h2>
+                <p className="mt-0.5 text-sm text-stone-500">{formatDate(selectedDay)} · {selectedDayRows.length}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {selectedDayRows.length > 0 && (
+                  <StockInPdfButton className="hidden sm:inline-flex" variant="gold" day={selectedDay} records={selectedDayRows} />
+                )}
+                <button
+                  type="button"
+                  className="grid h-10 w-10 place-items-center rounded-full border border-[#e6e0d6] bg-white text-stone-600 shadow-sm"
+                  onClick={() => setSelectedDay(null)}
+                  aria-label={t('close')}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </header>
+            <div className="stock-day-pop-body hide-scrollbar space-y-3">
+              {selectedDayRows.length > 0 && (
+                <StockInPdfButton className="w-full sm:hidden" variant="gold" day={selectedDay} records={selectedDayRows} />
+              )}
+              {selectedDayRows.map((item) => (
+                <StockInRecordCard key={item.id} record={item} onView={setOpenDelivery} />
+              ))}
+              {!selectedDayRows.length && <p className="px-1 py-8 text-center text-sm text-stone-500">{t('stockDayEmpty')}</p>}
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
       <Modal open={Boolean(openDelivery)} title={t('deliveryDetails')} onClose={() => setOpenDelivery(null)} wide>
         {openDelivery && <StockInDetail record={app.stockIns.find((item) => item.id === openDelivery.id) ?? openDelivery} mode="own" />}
@@ -436,7 +566,7 @@ export function StockInPage() {
                   <p className="mt-1 font-semibold tabular-nums text-ink">{unitsTotal} · {app.money(costTotal)}</p>
                 </div>
               </div>
-              <p className="text-sm leading-6 text-stone-600">{editing ? 'The invoice number stays the same.' : employeeSubmit ? t('stockReviewLead') : `${t('stockInvoice')} ${invoiceRef}. ${t('stockApproveBody')}`}</p>
+              <p className="text-sm leading-6 text-stone-600">{editing ? t('stockEditInvoiceSame') : employeeSubmit ? t('stockReviewLead') : `${t('stockInvoice')} ${invoiceRef}. ${t('stockApproveBody')}`}</p>
               <Field label={t('stockNotes')}><TextArea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
               <ol className="grid gap-3 sm:grid-cols-2">
                 {preview.map((line, index) => (
@@ -479,7 +609,7 @@ export function StockInPage() {
                 if (!result.ok) return
                 setReview(false)
                 navigate('/admin/stock-in')
-              }}>Save delivery</Button>
+              }}>{t('stockSaveDelivery')}</Button>
             )}
             {!editing && !employeeSubmit && (
               <Button className="w-full" variant="gold" loading={saving} onClick={async () => {

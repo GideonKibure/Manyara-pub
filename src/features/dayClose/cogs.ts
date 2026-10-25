@@ -14,11 +14,13 @@ export interface CogsTotals {
 }
 
 export function cogsTotals(rows: Array<{ amount: number; profit: number }>, expenses: number, debts: DayDebt[], mobile: number): CogsTotals {
-  const sales = rows.reduce((sum, row) => sum + row.amount, 0)
-  const cogs = rows.reduce((sum, row) => sum + (row.amount - row.profit), 0)
+  const sales = Math.round(rows.reduce((sum, row) => sum + row.amount, 0))
+  const cogs = Math.round(rows.reduce((sum, row) => sum + (row.amount - row.profit), 0))
   const gross = sales - cogs
   const debtTotal = debts.reduce((sum, row) => sum + debtOutstanding(row), 0)
   const collections = sales - debtTotal
-  const cash = collections - mobile
-  return { sales, cogs, gross, expenses, debtTotal, collections, mobile, cash, net: gross - expenses }
+  const mobileSafe = Math.max(0, Math.round(mobile || 0))
+  const expenseSafe = Math.max(0, Math.round(expenses || 0))
+  const cash = collections - mobileSafe
+  return { sales, cogs, gross, expenses: expenseSafe, debtTotal, collections, mobile: mobileSafe, cash, net: gross - expenseSafe }
 }

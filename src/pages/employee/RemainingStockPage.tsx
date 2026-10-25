@@ -1,21 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Package, Pencil, Save, Search, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Package, Pencil, Plus, Save, Search, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react'
 import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
-import { Field, NumberInput, TextArea, TextInput } from '@/components/ui/Fields'
+import { ChainScroll } from '@/components/ui/ChainScroll'
+import { Field, NumberInput, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
+import { billedSoldQty } from '@/features/dayClose/billedSold'
 import { CogsEditor } from '@/features/dayClose/CogsEditor'
-import { DebtCard } from '@/features/dayClose/DebtCard'
-import { blankDebt } from '@/features/dayClose/debts'
+import { CogsExpenseCard, CogsExpenseEmpty, cogsExpenseGrid } from '@/features/dayClose/CogsExpenseCard'
+import { CogsDebtComposer, CogsDebtEmpty, DebtCard, cogsDebtGrid } from '@/features/dayClose/DebtCard'
+import { CogsLipaPanel } from '@/features/dayClose/CogsLipaPanel'
+import { debtOutstanding } from '@/features/dayClose/debts'
 import { snapshotFor } from '@/features/inventory/stock'
-import { CogsSheet, type SalesDayRow } from '@/features/reports/SalesDayReport'
+import { CogsSheet, CogsSoldPane, type SalesDayRow } from '@/features/reports/SalesDayReport'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
-import type { CogsExpenseLine, CogsLine, DayDebt, Product } from '@/types'
+import type { CogsExpenseLine, CogsLine, CogsMobileItem, DayDebt, Product } from '@/types'
 import { dateKey, dateKeyDaysAgo, employeeMinDateKey, isEmployeeAllowedDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { cn } from '@/utils/cn'
+import { roundBuyingPrice } from '@/utils/money'
 
 function formatQty(value: number) {
   const rounded = Math.round(value * 2) / 2
@@ -30,7 +35,9 @@ function productMatches(product: Product, needle: string) {
 function CountProductCard({
   product,
   opening,
+  available,
   remaining,
+  fallbackRemaining,
   cost,
   onRemaining,
   onCost,
@@ -39,7 +46,9 @@ function CountProductCard({
 }: {
   product: Product
   opening: number
+  available: number
   remaining: number | null
+  fallbackRemaining: number
   cost: number | null
   onRemaining: (value: number | null) => void
   onCost: (value: number | null) => void
@@ -49,15 +58,16 @@ function CountProductCard({
   const app = useApp()
   const { t } = useI18n()
   const [priceOpen, setPriceOpen] = useState(false)
-  const left = remaining == null ? opening : remaining
+  const left = remaining == null ? fallbackRemaining : remaining
   const sold = Math.max(0, opening - left)
-  const unitCost = cost ?? product.costPrice
+  const unitCost = roundBuyingPrice(cost ?? product.costPrice)
   const profit = sold * (product.sellingPrice - unitCost)
   const halfOk = Number.isFinite(left) && left >= 0 && Math.abs(left * 2 - Math.round(left * 2)) < 1e-6
-  const over = left > opening || left < 0 || !halfOk
+  const cap = Math.min(opening, available)
+  const over = left > cap + 1e-6 || left < 0 || !halfOk
   const nudge = (delta: number) => {
     const next = Math.round((left + delta) * 2) / 2
-    onRemaining(Math.min(opening, Math.max(0, next)))
+    onRemaining(Math.min(cap, Math.max(0, next)))
   }
 
   return (
@@ -91,7 +101,7 @@ function CountProductCard({
           <NumberInput
             id={`cogs-remain-${product.id}`}
             allowDecimal
-            value={remaining ?? opening}
+            value={remaining ?? fallbackRemaining}
             onValueChange={onRemaining}
             className="h-12 rounded-2xl border-amber-200/80 bg-white text-center text-xl font-semibold"
           />
@@ -115,7 +125,7 @@ function CountProductCard({
       </div>
       {priceOpen && (
         <div className="space-y-2 border-t border-white/70 px-3 py-3">
-          <NumberInput value={cost ?? product.costPrice} onValueChange={onCost} className="rounded-2xl border-amber-200/80 bg-white text-lg font-semibold" />
+          <NumberInput value={cost ?? roundBuyingPrice(product.costPrice)} onValueChange={onCost} className="rounded-2xl border-amber-200/80 bg-white text-lg font-semibold" />
           <p className="text-[11px] text-stone-500">{t('remainBuyHint')}</p>
           {onSkip ? (
             <Button type="button" size="sm" variant="danger" onClick={onSkip}>
@@ -144,10 +154,12 @@ export function RemainingStockPage() {
   const app = useApp()
   const { t } = useI18n()
   const allowed = app.settings.allowRemainingCount
+  const lookback = app.settings.recordLookbackDays
   const today = dateKey()
   const yesterday = dateKeyDaysAgo(1)
-  const minDay = employeeMinDateKey()
-  const [cogsDay, setCogsDay] = useState(yesterday)
+  const minDay = employeeMinDateKey(lookback)
+  const defaultDay = isEmployeeAllowedDay(yesterday, undefined, lookback) ? yesterday : today
+  const [cogsDay, setCogsDay] = useState(defaultDay)
   const myClose = (app.dayCloses ?? []).find((item) => item.day === cogsDay && item.submittedBy === app.user?.id)
   const rows = useMemo(() => {
     const saved = new Map((myClose?.lines ?? []).filter((line) => line.productId).map((line) => [line.productId as string, line]))
@@ -155,24 +167,28 @@ export function RemainingStockPage() {
       .filter((product) => product.isActive)
       .map((product) => {
         const live = snapshotFor({ products: app.products, sales: app.sales, movements: app.movements }, product.id).available
+        const billed = billedSoldQty(app.sales, product.id, cogsDay, app.user?.id)
         const line = saved.get(product.id)
-        const opening = line ? line.remaining + line.sold : live
-        return { product, opening, saved: line }
+        const opening = line ? line.remaining + line.sold : live + billed
+        const fallbackRemaining = line ? line.remaining : live
+        return { product, opening, live, billed, fallbackRemaining, saved: line }
       })
       .filter((row) => row.opening > 0 || row.saved)
       .sort((a, b) => a.product.name.localeCompare(b.product.name))
-  }, [app.products, app.sales, app.movements, myClose?.id, myClose?.lines])
+  }, [app.products, app.sales, app.movements, app.user?.id, cogsDay, myClose?.id, myClose?.lines])
   const [remaining, setRemaining] = useState<Record<string, number | null>>({})
   const [costs, setCosts] = useState<Record<string, number | null>>({})
   const [skipped, setSkipped] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const listScrollRef = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState<number | null>(null)
   const [notes, setNotes] = useState('')
-  const [mobile, setMobile] = useState<number | null>(0)
+  const [composerPulse, setComposerPulse] = useState<'ok' | 'bad' | null>(null)
+  const [mobileItems, setMobileItems] = useState<CogsMobileItem[]>([])
   const [debts, setDebts] = useState<DayDebt[]>([])
   const [expenseItems, setExpenseItems] = useState<CogsExpenseLine[]>([])
   const [lines, setLines] = useState<CogsLine[]>([])
@@ -182,7 +198,7 @@ export function RemainingStockPage() {
     if (!myClose) {
       setDebts([])
       setExpenseItems([])
-      setMobile(0)
+      setMobileItems([])
       setLines([])
       setRemaining({})
       setCosts({})
@@ -192,7 +208,13 @@ export function RemainingStockPage() {
     }
     setDebts((myClose.debts ?? []).map((item) => ({ ...item, id: item.id || uid() })))
     setExpenseItems((myClose.expenseItems ?? []).map((item) => ({ ...item, id: item.id || uid() })))
-    setMobile(myClose.mobileReceived)
+    setMobileItems(
+      (myClose.mobileItems ?? []).length
+        ? myClose.mobileItems.map((item) => ({ ...item, id: item.id || uid() }))
+        : myClose.mobileReceived > 0
+          ? [{ id: uid(), amount: myClose.mobileReceived, date: cogsDay }]
+          : [],
+    )
     setLines(myClose.lines ?? [])
     const nextRemain: Record<string, number | null> = {}
     const nextCosts: Record<string, number | null> = {}
@@ -204,18 +226,39 @@ export function RemainingStockPage() {
     setRemaining(nextRemain)
     setCosts(nextCosts)
     setSkipped([])
-    setStep('sheet')
+    setStep((myClose.lines ?? []).length ? 'sheet' : 'count')
   }, [cogsDay, myClose?.id])
 
+  useEffect(() => {
+    if (!myClose) {
+      setExpenseItems([])
+      return
+    }
+    setExpenseItems((myClose.expenseItems ?? []).map((item) => ({ ...item, id: item.id || uid() })))
+  }, [myClose?.id, myClose?.expenseItems, myClose?.expenseTotal])
+
+  useEffect(() => {
+    if (!myClose) {
+      setDebts([])
+      return
+    }
+    setDebts((myClose.debts ?? []).map((item) => ({ ...item, id: item.id || uid() })))
+  }, [myClose?.id, myClose?.debts])
+
+  useEffect(() => {
+    listScrollRef.current?.scrollTo({ top: 0 })
+  }, [search, filter])
+
   const locked = myClose?.status === 'approved'
-  const filled = rows.filter((row) => !skipped.includes(row.product.id)).map(({ product, opening }) => {
+  const filled = rows.filter((row) => !skipped.includes(row.product.id)).map(({ product, opening, live, fallbackRemaining }) => {
     const value = remaining[product.id]
-    const left = value == null ? opening : value
+    const left = value == null ? fallbackRemaining : value
     const sold = Math.max(0, opening - left)
-    const unitCost = costs[product.id] ?? product.costPrice
+    const unitCost = roundBuyingPrice(costs[product.id] ?? product.costPrice)
     const profit = sold * (product.sellingPrice - unitCost)
     const halfOk = Number.isFinite(left) && left >= 0 && Math.abs(left * 2 - Math.round(left * 2)) < 1e-6
-    return { product, opening, left, sold, unitCost, profit, revenue: sold * product.sellingPrice, over: left > opening || left < 0 || !halfOk }
+    const cap = Math.min(opening, live)
+    return { product, opening, live, left, sold, unitCost, profit, revenue: Math.round(sold * product.sellingPrice), over: left > cap + 1e-6 || left < 0 || !halfOk, fallbackRemaining }
   })
   const openingUnits = filled.reduce((sum, row) => sum + row.opening, 0)
   const soldUnits = filled.reduce((sum, row) => sum + row.sold, 0)
@@ -248,6 +291,11 @@ export function RemainingStockPage() {
   }))
   const reportRows: SalesDayRow[] = (lines.length ? lines : countedRows).filter((row) => row.sold > 0 || row.remaining > 0)
   const sheetExpenses = expenseItems.reduce((sum, item) => sum + item.amount, 0)
+  const mobile = mobileItems.reduce((sum, item) => sum + (item.amount || 0), 0)
+
+  useEffect(() => {
+    if (!isEmployeeAllowedDay(cogsDay, undefined, lookback)) setCogsDay(defaultDay)
+  }, [cogsDay, defaultDay, lookback])
 
   const summary = [
     { label: t('remainOpening'), value: formatQty(openingUnits), hint: t('remainUnits'), icon: Package, tone: 'from-stone-800 to-stone-950 text-white' },
@@ -262,7 +310,11 @@ export function RemainingStockPage() {
     const payloadLines = step === 'count' || !lines.length ? countedRows : lines
     setLines(payloadLines)
     let saleId = myClose?.remainingSaleId
-    if (!saleId && allowed && filled.some((row) => row.sold > 0)) {
+    const extraSold = filled.some((row) => {
+      const live = snapshotFor({ products: app.products, sales: app.sales, movements: app.movements }, row.product.id).available
+      return row.left < live - 1e-6
+    })
+    if (!saleId && allowed && extraSold) {
       const counted = await app.sendRemainingCount(filled.map((row) => ({ productId: row.product.id, remaining: row.left, unitCost: row.unitCost })))
       if (!counted.ok) {
         setBusy(false)
@@ -274,10 +326,11 @@ export function RemainingStockPage() {
       day: cogsDay,
       remainingSaleId: saleId,
       debts: nextDebts,
-      mobileReceived: mobile ?? 0,
+      mobileReceived: mobile,
       expenseTotal: expenseItems.reduce((sum, item) => sum + item.amount, 0),
       lines: payloadLines,
       expenseItems,
+      mobileItems,
     })
     setBusy(false)
     if (result.ok && !stayOnSheet) setStep('sheet')
@@ -287,10 +340,7 @@ export function RemainingStockPage() {
   const prevStep = (from: Step) => steps[Math.max(steps.indexOf(from) - 1, 0)]
 
   return (
-    <div className={cn(
-      'employee-dash remaining-close relative -mx-3 -mt-4 min-h-[calc(100dvh-4.5rem)] px-3 pb-[calc(8.5rem+env(safe-area-inset-bottom))] pt-5 sm:-mx-4 sm:-mt-6 sm:px-4 sm:pt-6 md:-mx-8 md:-mb-8 md:px-8 md:pb-28',
-      step === 'count' && allowed && !locked && 'cogs-has-search',
-    )}>
+    <div className="employee-dash remaining-close relative -mx-3 -mt-4 min-h-[calc(100dvh-4.5rem)] px-3 pb-[calc(8.5rem+env(safe-area-inset-bottom))] pt-5 sm:-mx-4 sm:-mt-6 sm:px-4 sm:pt-6 md:-mx-8 md:-mb-8 md:px-8 md:pb-28">
       <div className="mx-auto w-full max-w-5xl space-y-4">
         <PageHeader title={t('remainTitle')} description={t('remainBody')} />
         <div className="flex flex-wrap items-center gap-2">
@@ -303,7 +353,7 @@ export function RemainingStockPage() {
               value={cogsDay}
               onChange={(event) => {
                 const next = event.target.value
-                if (!isEmployeeAllowedDay(next)) return
+                if (!isEmployeeAllowedDay(next, undefined, lookback)) return
                 setCogsDay(next)
               }}
               className="bg-transparent font-semibold outline-none"
@@ -313,20 +363,25 @@ export function RemainingStockPage() {
         </div>
         {myClose?.status === 'pending' && <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">{t('cogsSavedPending')}</p>}
         {locked && <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-950">{t('cogsApprovedLock')}</p>}
-        {!myClose && allowed && <p className="text-sm leading-6 text-stone-600">{t('cogsDraftHint')}</p>}
+        {!myClose && allowed && step !== 'count' && <p className="text-sm leading-6 text-stone-600">{t('cogsDraftHint')}</p>}
 
         <div className="grid grid-cols-5 gap-1.5">
           {steps.map((item, index) => (
             <button
               key={item}
               type="button"
-              className={cn('rounded-2xl px-1 py-2 text-[10px] font-semibold uppercase tracking-wide transition sm:text-xs', step === item ? 'bg-amber-700 text-white' : 'glass-panel text-stone-600')}
+              className={cn(
+                'rounded-2xl px-1 py-2 text-[10px] font-semibold uppercase tracking-wide transition sm:text-xs',
+                step === item ? 'bg-amber-700 text-white shadow-md shadow-amber-900/20' : 'glass-panel text-stone-600 hover:bg-white',
+              )}
               onClick={() => setStep(item)}
             >
               {index + 1}. {t(stepLabel[item])}
             </button>
           ))}
         </div>
+
+        {step === 'sheet' && <CogsSoldPane rows={reportRows} />}
 
         {!allowed && <div className="rounded-3xl border border-amber-200 bg-amber-50/90 p-5 text-sm leading-6 text-amber-950">{t('remainLocked')}</div>}
 
@@ -343,87 +398,193 @@ export function RemainingStockPage() {
               ))}
             </div>
             {allowed && !locked && (
-              <div className="space-y-3">
-                {myClose?.remainingSaleId && <p className="rounded-2xl bg-white/70 px-3 py-2 text-xs leading-5 text-stone-600">{t('cogsStockAlreadySent')}</p>}
-                {!filled.length && <p className="rounded-3xl border border-dashed border-stone-300 bg-white/60 px-4 py-8 text-center text-sm text-stone-500">{t('remainNoneInStock')}</p>}
-                <div className="grid gap-2.5 sm:grid-cols-2">
-                  {listed.map((row) => (
-                    <CountProductCard
-                      key={row.product.id}
-                      product={row.product}
-                      opening={row.opening}
-                      remaining={remaining[row.product.id] ?? null}
-                      cost={costs[row.product.id] ?? null}
-                      highlighted={Boolean(needle && productMatches(row.product, needle))}
-                      onRemaining={(next) => writeRemaining(row.product.id, next)}
-                      onCost={(next) => setCosts((current) => ({ ...current, [row.product.id]: next }))}
-                      onSkip={() => setSkipped((current) => [...current, row.product.id])}
-                    />
-                  ))}
+              <div className="cogs-count-screen">
+                <div className="cogs-count-toolbar">
+                  <div className="cogs-search-card">
+                    <div className="cogs-search-row">
+                      <Search className="h-4 w-4 shrink-0 text-amber-800" />
+                      <input
+                        ref={searchInputRef}
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter') return
+                          const first = listed[0]
+                          if (!first) return
+                          event.preventDefault()
+                          document.getElementById(`cogs-remain-${first.product.id}`)?.focus()
+                        }}
+                        placeholder={t('pickerPlaceholder')}
+                        aria-label={t('remainSearch')}
+                        className="min-w-0 flex-1 bg-transparent text-base font-semibold text-ink outline-none placeholder:font-normal placeholder:text-stone-400"
+                      />
+                      {search ? (
+                        <button
+                          type="button"
+                          className="grid h-8 w-8 place-items-center rounded-full text-stone-500 hover:bg-stone-100"
+                          aria-label={t('remainSearchClear')}
+                          onClick={() => {
+                            setSearch('')
+                            searchInputRef.current?.focus()
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 px-0.5">
+                      {(['all', 'open', 'done'] as const).map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => setFilter(item)}
+                          className={cn('rounded-full px-3 py-1.5 text-xs font-semibold transition', filter === item ? 'bg-stone-950 text-white' : 'bg-white/80 text-stone-600')}
+                        >
+                          {t(item === 'all' ? 'cogsFilterAll' : item === 'open' ? 'cogsFilterOpen' : 'cogsFilterDone')}
+                        </button>
+                      ))}
+                      <span className="ml-auto text-xs font-semibold tabular-nums text-stone-500">
+                        {t('cogsCountProgress').replace('{n}', String(countedIds)).replace('{total}', String(filled.length))}
+                      </span>
+                    </div>
+                    <div className="cogs-search-progress" aria-hidden>
+                      <span style={{ width: `${filled.length ? Math.min(100, (countedIds / filled.length) * 100) : 0}%` }} />
+                    </div>
+                  </div>
                 </div>
-                {needle && !listed.length && <p className="text-sm text-stone-500">{t('pickerEmpty')}</p>}
-                {blocked && <p className="text-sm text-rose-700">{t('remainOver')}</p>}
+                <ChainScroll ref={listScrollRef} className="cogs-count-scroll">
+                  {myClose?.remainingSaleId && <p className="mb-2.5 rounded-2xl bg-white/70 px-3 py-2 text-xs leading-5 text-stone-600">{t('cogsStockAlreadySent')}</p>}
+                  {blocked && <p className="mb-2.5 text-sm text-rose-700">{t('remainOver')}</p>}
+                  {!filled.length && <p className="rounded-3xl border border-dashed border-stone-300 bg-white/60 px-4 py-8 text-center text-sm text-stone-500">{t('remainNoneInStock')}</p>}
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {listed.map((row) => (
+                      <CountProductCard
+                        key={row.product.id}
+                        product={row.product}
+                        opening={row.opening}
+                        available={row.live}
+                        remaining={remaining[row.product.id] ?? null}
+                        fallbackRemaining={row.fallbackRemaining}
+                        cost={costs[row.product.id] ?? null}
+                        highlighted={Boolean(needle && productMatches(row.product, needle))}
+                        onRemaining={(next) => writeRemaining(row.product.id, next)}
+                        onCost={(next) => setCosts((current) => ({ ...current, [row.product.id]: next }))}
+                        onSkip={() => setSkipped((current) => [...current, row.product.id])}
+                      />
+                    ))}
+                  </div>
+                  {needle && !listed.length && <p className="px-1 py-6 text-sm text-stone-500">{t('pickerEmpty')}</p>}
+                </ChainScroll>
               </div>
             )}
           </>
         )}
 
         {step === 'expenses' && (
-          <Panel className="space-y-4">
-            <Field label={t('expenseWhat')}><TextInput value={description} onChange={(event) => setDescription(event.target.value)} disabled={locked} /></Field>
-            <Field label={t('expenseAmount')}><NumberInput value={amount} onValueChange={setAmount} disabled={locked} /></Field>
-            <Field label={t('expenseNotes')}><TextArea value={notes} onChange={(event) => setNotes(event.target.value)} disabled={locked} /></Field>
-            <Button
-              variant="gold"
-              disabled={!description.trim() || amount == null || amount < 1 || locked}
-              onClick={() => {
-                if (amount == null) return
-                setExpenseItems((current) => [...current, { id: uid(), description: description.trim(), amount, notes }])
-                setDescription('')
-                setAmount(null)
-                setNotes('')
-              }}
-            >
-              {t('cogsAddExpense')}
-            </Button>
-            <ul className="space-y-2">
-              {expenseItems.map((item, index) => (
-                <li key={item.id ?? `expense-${index}`} className="grid gap-2 rounded-2xl bg-white/50 p-3 sm:grid-cols-[1fr_8rem_auto]">
-                  <TextInput value={item.description} disabled={locked} onChange={(event) => setExpenseItems((current) => current.map((row, i) => (i === index ? { ...row, description: event.target.value } : row)))} />
-                  <NumberInput value={item.amount} disabled={locked} onValueChange={(value) => setExpenseItems((current) => current.map((row, i) => (i === index ? { ...row, amount: value ?? 0 } : row)))} />
-                  <Button size="sm" variant="danger" disabled={locked} onClick={() => setExpenseItems((current) => current.filter((_, i) => i !== index))}>{t('deleteRecord')}</Button>
-                </li>
-              ))}
-              {!expenseItems.length && <li className="text-sm text-stone-500">{t('yourExpensesEmpty')}</li>}
-            </ul>
-          </Panel>
+          <div className="space-y-3">
+            <div className={cn('cogs-composer', composerPulse === 'ok' && 'is-ok', composerPulse === 'bad' && 'is-bad')}>
+              <div className="cogs-composer-grid">
+                <Field label={t('expenseWhat')} className="cogs-composer-field">
+                  <TextInput value={description} onChange={(event) => setDescription(event.target.value)} disabled={locked} />
+                </Field>
+                <Field label={t('expenseAmount')} className="cogs-composer-field">
+                  <NumberInput value={amount} onValueChange={setAmount} disabled={locked} />
+                </Field>
+                <Field label={t('expenseNotes')} className="cogs-composer-field">
+                  <TextInput value={notes} onChange={(event) => setNotes(event.target.value)} disabled={locked} />
+                </Field>
+                <Button
+                  variant="gold"
+                  size="sm"
+                  className="cogs-composer-add emp-shine"
+                  disabled={locked}
+                  onClick={() => {
+                    if (!description.trim() || amount == null || amount < 1) {
+                      setComposerPulse('bad')
+                      window.setTimeout(() => setComposerPulse(null), 420)
+                      return
+                    }
+                    setExpenseItems((current) => [...current, { id: uid(), description: description.trim(), amount, notes }])
+                    setDescription('')
+                    setAmount(null)
+                    setNotes('')
+                    setComposerPulse('ok')
+                    window.setTimeout(() => setComposerPulse(null), 700)
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="hidden sm:inline">{t('cogsAddExpense')}</span>
+                </Button>
+              </div>
+            </div>
+            <section className="cogs-sold-screen">
+              <div className="cogs-sold-toolbar">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-800">{t('yourExpenses')}</p>
+                  <p className="mt-0.5 text-xs text-stone-500">{expenseItems.length}</p>
+                </div>
+                {expenseItems.length > 0 ? (
+                  <p className="shrink-0 text-sm font-semibold tabular-nums text-ink">
+                    {t('cogsExpenseTotal')} · {app.money(expenseItems.reduce((sum, item) => sum + (item.amount || 0), 0))}
+                  </p>
+                ) : null}
+              </div>
+              <ChainScroll className="cogs-sold-scroll">
+                <div className={cogsExpenseGrid}>
+                  {expenseItems.map((item, index) => (
+                    <CogsExpenseCard
+                      key={item.id ?? `expense-${index}`}
+                      item={item}
+                      index={index}
+                      locked={locked}
+                      onChange={(next) => setExpenseItems((current) => current.map((row, i) => (i === index ? next : row)))}
+                      onRemove={() => setExpenseItems((current) => current.filter((_, i) => i !== index))}
+                    />
+                  ))}
+                  {!expenseItems.length ? <CogsExpenseEmpty /> : null}
+                </div>
+              </ChainScroll>
+            </section>
+          </div>
         )}
 
         {step === 'debts' && (
-          <Panel className="space-y-4">
-            <h2 className="font-semibold">{t('cogsDebtsTitle')}</h2>
+          <div className="space-y-3">
             <p className="text-sm text-stone-600">{t('cogsDebtsBody')}</p>
-            <div className="grid gap-3">
-              {debts.map((item, index) => (
-                <DebtCard
-                  key={item.id ?? `debt-${index}`}
-                  item={item}
-                  locked={locked}
-                  onChange={(next) => setDebts((current) => current.map((row) => (row.id === item.id ? next : row)))}
-                  onRemove={() => setDebts((current) => current.filter((row) => row.id !== item.id))}
-                />
-              ))}
-            </div>
-            <Button variant="secondary" className="w-full sm:w-auto" disabled={locked} onClick={() => setDebts((current) => [...current, blankDebt()])}>{t('cogsAddDebt')}</Button>
-          </Panel>
+            <CogsDebtComposer locked={locked} onAdd={(item) => setDebts((current) => [...current, item])} />
+            <section className="cogs-sold-screen">
+              <div className="cogs-sold-toolbar">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-800">{t('cogsDebtsTitle')}</p>
+                  <p className="mt-0.5 text-xs text-stone-500">{debts.length}</p>
+                </div>
+                {debts.length > 0 ? (
+                  <p className="shrink-0 text-sm font-semibold tabular-nums text-ink">
+                    {t('cogsDebtsOutstanding')} · {app.money(debts.reduce((sum, item) => sum + debtOutstanding(item), 0))}
+                  </p>
+                ) : null}
+              </div>
+              <ChainScroll className="cogs-sold-scroll">
+                <div className={cogsDebtGrid}>
+                  {debts.map((item, index) => (
+                    <DebtCard
+                      key={item.id ?? `debt-${index}`}
+                      item={item}
+                      index={index}
+                      locked={locked}
+                      onChange={(next) => setDebts((current) => current.map((row) => (row.id === item.id ? next : row)))}
+                      onRemove={() => setDebts((current) => current.filter((row) => row.id !== item.id))}
+                    />
+                  ))}
+                  {!debts.length ? <CogsDebtEmpty /> : null}
+                </div>
+              </ChainScroll>
+            </section>
+          </div>
         )}
 
         {step === 'mobile' && (
-          <Panel className="space-y-4">
-            <h2 className="font-semibold">{t('cogsMobileTitle')}</h2>
-            <p className="text-sm text-stone-600">{t('cogsMobileBody')}</p>
-            <Field label={t('cogsMobileAmount')}><NumberInput value={mobile} onValueChange={setMobile} disabled={locked} /></Field>
-          </Panel>
+          <CogsLipaPanel items={mobileItems} onItems={setMobileItems} day={cogsDay} locked={locked} />
         )}
 
         {step === 'sheet' && (
@@ -437,23 +598,28 @@ export function RemainingStockPage() {
             {!locked && (
               <Panel>
                 <CogsEditor
+                  hideSold
                   lines={reportRows}
                   onLines={setLines}
                   expenses={expenseItems}
                   onExpenses={setExpenseItems}
                   debts={debts}
                   onDebts={setDebts}
-                  mobile={mobile}
-                  onMobile={setMobile}
+                  mobileItems={mobileItems}
+                  onMobileItems={setMobileItems}
+                  day={cogsDay}
                 />
               </Panel>
             )}
             <CogsSheet
               rows={reportRows}
+              showSold={false}
               day={cogsDay}
               expenses={sheetExpenses}
+              expenseItems={expenseItems}
               debts={debts}
               mobile={mobile ?? 0}
+              mobileItems={mobileItems}
               staff={`${app.user?.fullName ?? ''} @${app.user?.username ?? ''}`}
               approved={myClose?.status === 'approved'}
               canPay={!locked}
@@ -471,7 +637,7 @@ export function RemainingStockPage() {
                 if (result.ok) {
                   setDebts([])
                   setExpenseItems([])
-                  setMobile(0)
+                  setMobileItems([])
                   setLines([])
                   setRemaining({})
                   setStep('count')
@@ -481,39 +647,6 @@ export function RemainingStockPage() {
           </div>
         )}
       </div>
-
-      {step === 'count' && allowed && !locked && (
-        <div className="cogs-search-float">
-          <div className="mx-auto w-full max-w-5xl space-y-2 rounded-2xl bg-paper/80 p-1.5 shadow-[0_10px_28px_rgba(28,25,23,0.08)] backdrop-blur-xl sm:p-2">
-            <div className="glass-panel flex items-center gap-2 rounded-2xl px-3 py-2">
-              <Search className="h-4 w-4 shrink-0 text-amber-800" />
-              <input
-                ref={searchInputRef}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={t('pickerPlaceholder')}
-                aria-label={t('remainSearch')}
-                className="min-w-0 flex-1 bg-transparent text-base font-semibold text-ink outline-none placeholder:font-normal placeholder:text-stone-400"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-2 px-0.5">
-              {(['all', 'open', 'done'] as const).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setFilter(item)}
-                  className={cn('rounded-full px-3 py-1.5 text-xs font-semibold', filter === item ? 'bg-stone-950 text-white' : 'glass-panel text-stone-600')}
-                >
-                  {t(item === 'all' ? 'cogsFilterAll' : item === 'open' ? 'cogsFilterOpen' : 'cogsFilterDone')}
-                </button>
-              ))}
-              <span className="text-xs font-semibold text-stone-500">
-                {t('cogsCountProgress').replace('{n}', String(countedIds)).replace('{total}', String(filled.length))}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {allowed && !locked && (
         <div className="cogs-dock">

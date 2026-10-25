@@ -158,6 +158,9 @@ begin
 end;
 $$;
 
+drop function if exists public.current_stock();
+drop function if exists public.reserved_qty(uuid);
+
 create or replace function public.reserved_qty(p_product uuid)
 returns integer
 language sql

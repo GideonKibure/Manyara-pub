@@ -57,6 +57,7 @@ export function StockInPage() {
   const [removingBusy, setRemovingBusy] = useState(false)
   const [approving, setApproving] = useState(false)
   const [deleteAllOpen, setDeleteAllOpen] = useState(false)
+  const [deleteDayOpen, setDeleteDayOpen] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
   const pendingCount = app.stockIns.filter((item) => item.status === 'pending').length
   const supplierToRemove = app.suppliers.find((supplier) => supplier.id === removing)
@@ -221,6 +222,9 @@ export function StockInPage() {
 
       <Modal open={Boolean(selected)} title={selected ? `${t('pageStockReceived')} · ${formatDate(selected)}` : t('pageStockReceived')} onClose={() => setSelected(null)} wide>
         <div className="space-y-3">
+          {selected && selectedRows.length > 0 && (
+            <StockInPdfButton className="w-full sm:w-auto" variant="gold" day={selected} records={selectedRows} />
+          )}
           {selectedRows.map((item) => (
             <StockInRecordCard key={item.id} record={item} manage onView={setDetail} />
           ))}

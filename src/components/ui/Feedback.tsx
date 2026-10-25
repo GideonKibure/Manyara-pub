@@ -31,12 +31,12 @@ export function StockBadge({ level }: { level: StockLevel }) {
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 className="text-2xl font-semibold leading-tight tracking-tight text-ink sm:text-[1.65rem] md:text-3xl">{title}</h1>
-        {description && <p className="mt-1.5 max-w-3xl text-sm leading-6 text-stone-600 sm:text-[15px]">{description}</p>}
+    <div className="page-head mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <h1 className="page-head-title font-display text-2xl font-semibold leading-tight tracking-tight text-ink sm:text-[1.65rem] md:text-3xl">{title}</h1>
+        {description && <p className="page-head-desc mt-1.5 max-w-3xl text-sm leading-6 text-stone-600 sm:text-[15px]">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {actions && <div className="page-head-actions flex flex-wrap gap-2">{actions}</div>}
     </div>
   )
 }

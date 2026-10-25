@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Bell, LogOut, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react'
+import { Bell, LogOut, X } from 'lucide-react'
 import { BrandLogo } from '@/components/BrandLogo'
 import { Button } from '@/components/ui/Button'
+import { MenuToggle } from '@/components/ui/MenuToggle'
 import { PersonPhoto, productFromNotice, ProductThumb } from '@/components/ProductPicker'
 import { noticeGroups, noticesIn } from '@/features/notifications/groups'
 import { ToastViewport } from '@/components/ui/Feedback'
@@ -39,6 +40,10 @@ export function AppShell({
   const [bellOpen, setBellOpen] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
   const home = user?.role === 'admin' ? '/admin/notifications' : '/employee/notifications'
+  const bellItems = (user?.role === 'employee'
+    ? notifications.filter((item) => Date.now() - new Date(item.createdAt).getTime() < 48 * 60 * 60 * 1000)
+    : notifications
+  ).slice(0, 5)
   const current = sections
     .flatMap((section) => section.items)
     .filter((item) => !item.menu)
@@ -93,8 +98,10 @@ export function AppShell({
           cn(
             'group flex min-h-11 touch-manipulation items-center gap-3 rounded-2xl px-3 py-2 text-sm font-medium transition duration-150 active:scale-[0.98]',
             glass ? 'text-stone-800 hover:bg-white/70' : 'text-stone-100 hover:bg-white/10 hover:text-white',
-            roomy && 'min-h-12 py-3 text-base leading-5',
-            isActive && 'bg-amber-700 text-white shadow-[0_8px_18px_rgba(180,83,9,0.28)] hover:bg-amber-700 hover:text-white',
+            roomy && 'min-h-12 py-3 pl-4 text-base leading-5',
+            isActive && (glass
+              ? 'bg-amber-700 text-white shadow-[0_8px_18px_rgba(180,83,9,0.28)] hover:bg-amber-700 hover:text-white'
+              : 'bg-gradient-to-r from-amber-700 to-amber-800 text-white shadow-[0_8px_18px_rgba(180,83,9,0.28)] hover:from-amber-700 hover:to-amber-800 hover:text-white'),
             compact && 'justify-center px-2',
           )
         }
@@ -115,18 +122,18 @@ export function AppShell({
       <div className={cn('flex items-center gap-3 px-4 py-5', compact && 'justify-center px-2', glass && 'pt-[max(1.25rem,env(safe-area-inset-top))]')}>
         <BrandLogo className={cn('shrink-0', compact ? 'h-11 w-11' : 'h-12 w-12')} alt={settings.businessName} />
         {!compact && (
-          <div className="min-w-0 flex-1">
+          <div className={cn('min-w-0 flex-1', onClose && 'pr-1')}>
             <p className={cn('font-display text-lg leading-tight', glass ? 'text-ink' : 'text-white')}>{settings.businessName}</p>
-            <p className={cn('mt-1 text-xs uppercase tracking-wider', glass ? 'text-stone-500' : 'text-stone-300')}>{t('management')}</p>
+            <p className={cn('mt-1 text-xs uppercase tracking-wider', glass ? 'text-stone-500' : 'text-amber-200/80')}>{t('management')}</p>
           </div>
         )}
         {onClose && (
-          <button type="button" className="grid h-10 w-10 place-items-center rounded-full border border-white/70 bg-white/50 text-stone-700 shadow-sm backdrop-blur hover:bg-white/80" aria-label={t('closeMenu')} onClick={onClose}>
-            <X className="h-5 w-5" />
-          </button>
+          <span className="shrink-0">
+            <MenuToggle open label={t('closeMenu')} onClick={onClose} />
+          </span>
         )}
       </div>
-      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4" aria-label="Main">
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4" aria-label={t('navMenu')}>
         {sections.map((section) => (
           <div key={section.label}>
             {!compact && <p className={cn('mb-2 px-3 text-xs font-semibold uppercase tracking-wider', glass ? 'text-stone-500' : 'text-stone-400', onClose && !glass && 'text-[13px] text-stone-200')}>{section.label}</p>}
@@ -146,7 +153,7 @@ export function AppShell({
           {!compact && (
             <div className="min-w-0">
               <p className={cn('text-sm font-semibold leading-5', glass ? 'text-ink' : 'text-white')}>{user?.fullName}</p>
-              <p className={cn('text-xs capitalize', glass ? 'text-stone-500' : 'text-stone-300')}>{user?.role}</p>
+              <p className={cn('text-xs', glass ? 'text-stone-500' : 'text-stone-300')}>{user?.role === 'admin' ? t('profileRoleAdmin') : t('profileRoleEmployee')}</p>
             </div>
           )}
         </Link>
@@ -160,13 +167,21 @@ export function AppShell({
   }
 
   return (
-    <div className="app-canvas min-h-screen text-ink">
-      <aside className={cn('no-print fixed inset-y-0 left-0 z-30 hidden bg-charcoal transition-[width] duration-200 md:block', collapsed ? 'w-20' : 'w-72')}>{sidebar(collapsed)}</aside>
+    <div className={cn('app-canvas min-h-screen text-ink', user?.role === 'employee' && 'emp-shell')}>
+      <aside className={cn('app-sidebar no-print fixed inset-y-0 left-0 z-30 hidden transition-[width] duration-200 md:block', collapsed ? 'w-20' : 'w-72')}>
+        {sidebar(collapsed)}
+        <div className="absolute right-2 top-3 z-40">
+          <MenuToggle
+            open={!collapsed}
+            label={collapsed ? t('expandSidebar') : t('collapseSidebar')}
+            onClick={toggleCollapsed}
+          />
+        </div>
+      </aside>
       {mobileOpen && (
         <div className="no-print fixed inset-0 z-40 md:hidden">
-          <button className="absolute inset-0 bg-stone-950/30 backdrop-blur-xl" aria-label={t('closeMenu')} onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-[70vw] overflow-hidden border-r border-white/70 bg-white/40 shadow-[16px_0_50px_rgba(28,25,23,0.18)] backdrop-blur-2xl">
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/55 via-white/25 to-amber-100/35" />
+          <button className="absolute inset-0 bg-stone-950/35 backdrop-blur-xl" aria-label={t('closeMenu')} onClick={() => setMobileOpen(false)} />
+          <aside className="app-sidebar-mobile absolute inset-y-0 left-0 w-[min(20rem,82vw)] overflow-hidden border-r border-white/70 shadow-[16px_0_50px_rgba(28,25,23,0.18)] backdrop-blur-2xl">
             <div className="relative h-full">{sidebar(false, () => setMobileOpen(false))}</div>
           </aside>
         </div>
@@ -178,23 +193,28 @@ export function AppShell({
           ['--app-header' as string]: '3.75rem',
         }}
       >
-        <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-white/70 bg-white/55 px-3 py-2 backdrop-blur-xl md:justify-start sm:px-4">
-          <button type="button" className="rounded-full ring-2 ring-amber-700/40 ring-offset-2 ring-offset-paper md:hidden" aria-label={t('openMenu')} aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}>
-            <PersonPhoto src={user?.imageUrl} name={user?.fullName ?? 'M'} className="h-11 w-11 text-base" />
-          </button>
-          <button type="button" className="hidden h-11 w-11 shrink-0 place-items-center rounded-xl hover:bg-stone-200 md:grid" aria-label={collapsed ? t('expandSidebar') : t('collapseSidebar')} aria-expanded={!collapsed} onClick={toggleCollapsed}>
-            {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
-          </button>
-          <p className="hidden min-w-0 flex-1 truncate text-sm font-semibold text-ink md:block sm:text-base">{current?.label ?? settings.businessName}</p>
-          <span className="hidden md:inline-flex">
+        <header className="app-pagebar no-print sticky top-0 z-20 flex items-center gap-2 px-3 py-2 backdrop-blur-xl sm:px-4">
+          <BrandLogo className="h-10 w-10 shrink-0 md:hidden" alt={settings.businessName} />
+          <div className="app-page-chip">
+            {current ? (
+              <span className="hidden h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-amber-500 to-amber-800 text-white shadow-md shadow-amber-900/20 sm:grid">
+                <current.icon className="h-5 w-5" />
+              </span>
+            ) : null}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-800">{settings.businessName}</span>
+              <span className="mt-0.5 block truncate font-display text-base leading-tight text-ink sm:text-lg">{current?.label ?? t('navMenu')}</span>
+            </span>
+          </div>
+          <Link to={profileTo} className="hidden md:inline-flex rounded-full ring-2 ring-white/80" aria-label={t('navProfile')}>
             <PersonPhoto src={user?.imageUrl} name={user?.fullName ?? 'M'} className="h-9 w-9" />
-          </span>
+          </Link>
           <div className="flex shrink-0 items-center gap-1.5">
             <div className="hidden md:block">
               <LanguageSwitch />
             </div>
             <div className="relative" ref={bellRef}>
-            <button type="button" className="relative grid h-11 w-11 place-items-center rounded-xl hover:bg-stone-200" aria-label={unreadCount > 0 ? `${t('notifications')} ${unreadCount}` : t('notifications')} aria-expanded={bellOpen} onClick={() => setBellOpen((open) => !open)}>
+            <button type="button" className="relative grid h-11 w-11 place-items-center rounded-2xl hover:bg-white/70" aria-label={unreadCount > 0 ? `${t('notifications')} ${unreadCount}` : t('notifications')} aria-expanded={bellOpen} onClick={() => setBellOpen((open) => !open)}>
               <Bell className="h-5 w-5" />
               {unreadCount > 0 && <span className="absolute left-1/2 top-0 grid h-3.5 min-w-3.5 -translate-x-1/2 place-items-center rounded-full bg-rose-700 px-1 text-[9px] font-bold leading-none text-white">{unreadCount > 99 ? '99+' : unreadCount}</span>}
             </button>
@@ -220,10 +240,10 @@ export function AppShell({
                   </div>
                 )}
                 <div className="max-h-80 space-y-2 overflow-y-auto">
-                  {notifications.slice(0, 5).map((item) => {
+                  {bellItems.map((item) => {
                     const product = productFromNotice(products, item)
                     return (
-                      <Link key={item.id} to={item.href} className="flex items-start gap-2 rounded-xl bg-stone-50 px-3 py-2 text-sm hover:bg-stone-100">
+                      <Link key={item.id} to={item.href} className={cn('flex items-start gap-2 rounded-xl px-3 py-2 text-sm hover:bg-stone-100', item.read ? 'bg-stone-50' : 'bg-amber-50 ring-1 ring-amber-200')}>
                         {product && <ProductThumb src={product.imageUrl} name={product.name} className="mt-0.5 h-8 w-8 shrink-0" />}
                         <span>
                           <span className="font-medium">{item.title}</span>
@@ -232,7 +252,7 @@ export function AppShell({
                       </Link>
                     )
                   })}
-                  {!notifications.length && <p className="text-sm text-stone-500">{t('noNotifications')}</p>}
+                  {!bellItems.length && <p className="text-sm text-stone-500">{t('noNotifications')}</p>}
                 </div>
                 <Link to={home} className="mt-3 block rounded-lg px-1 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50" onClick={() => setBellOpen(false)}>
                   {t('viewAll')}
@@ -240,10 +260,19 @@ export function AppShell({
               </div>
             )}
             </div>
+            <span className="md:hidden">
+              <MenuToggle
+                open={mobileOpen}
+                label={mobileOpen ? t('closeMenu') : t('openMenu')}
+                onClick={() => setMobileOpen((open) => !open)}
+              />
+            </span>
           </div>
         </header>
-        <main className={cn('px-3 py-4 sm:px-4 sm:py-6 md:px-8', bottom && 'pb-36 md:pb-8')}>
-          <Outlet />
+        <main className={cn('px-3 py-4 sm:px-4 sm:py-6 md:px-8', bottom && 'pb-[6.5rem] md:pb-8')}>
+          <div className={user?.role === 'employee' ? 'mx-auto w-full max-w-6xl' : undefined}>
+            <Outlet />
+          </div>
         </main>
       </div>
       {bottom && (
@@ -285,7 +314,7 @@ export function AppShell({
         </div>
       )}
       <ToastViewport toasts={toasts} onDismiss={dismissToast} />
-      <span className="sr-only">{mobileOpen ? 'Menu open' : ''}</span>
+      <span className="sr-only">{mobileOpen ? t('menuOpen') : ''}</span>
     </div>
   )
 }

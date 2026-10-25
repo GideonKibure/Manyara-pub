@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Field, NumberInput, TextArea, TextInput } from '@/components/ui/Fields'
-import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
+import { PageHeader, Panel } from '@/components/ui/Feedback'
 import { Modal } from '@/components/ui/Modal'
 import { useApp } from '@/context/AppContext'
+import { ExpensesCogsCalendar } from '@/features/expenses/ExpensesCogsCalendar'
 import { useI18n } from '@/i18n/LanguageContext'
-import { dateKey, employeeMinDateKey, formatDate, isEmployeeAllowedDay } from '@/utils/dates'
+import { dateKey, employeeMinDateKey, isEmployeeAllowedDay } from '@/utils/dates'
+import { uid } from '@/utils/id'
 
 export function ExpensesPage() {
   const app = useApp()
@@ -14,6 +16,7 @@ export function ExpensesPage() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const admin = app.user?.role === 'admin'
+  const lookback = app.settings.recordLookbackDays
   const corrects = app.expenses.find((item) => item.id === params.get('correct') && item.submittedBy === app.user?.id)
   const [description, setDescription] = useState(corrects?.description ?? '')
   const [amount, setAmount] = useState<number | null>(corrects?.amount ?? null)
@@ -21,7 +24,26 @@ export function ExpensesPage() {
   const [notes, setNotes] = useState(corrects?.notes ?? '')
   const [review, setReview] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [submitError, setSubmitError] = useState('')
   const ready = description.trim().length >= 2 && amount != null && amount >= 1 && /^\d{4}-\d{2}-\d{2}$/.test(spentOn)
+
+  async function saveToCogs() {
+    const close = (app.dayCloses ?? []).find((item) => item.day === spentOn && item.submittedBy === app.user?.id)
+    const expenseItems = [
+      ...(close?.expenseItems ?? []),
+      { id: uid(), description: description.trim(), amount: amount ?? 0, notes: notes.trim() },
+    ]
+    return app.saveDayClose({
+      day: spentOn,
+      remainingSaleId: close?.remainingSaleId,
+      debts: close?.debts ?? [],
+      mobileReceived: close?.mobileReceived ?? 0,
+      expenseTotal: expenseItems.reduce((sum, item) => sum + item.amount, 0),
+      lines: close?.lines ?? [],
+      expenseItems,
+      mobileItems: close?.mobileItems ?? [],
+    })
+  }
 
   return (
     <div>
@@ -37,12 +59,12 @@ export function ExpensesPage() {
         <Field label={t('expenseDate')}>
           <TextInput
             type="date"
-            min={admin ? undefined : employeeMinDateKey()}
+            min={admin ? undefined : employeeMinDateKey(lookback)}
             max={dateKey()}
             value={spentOn}
             onChange={(event) => {
               const next = event.target.value
-              if (!admin && !isEmployeeAllowedDay(next, corrects?.spentOn)) return
+              if (!admin && !isEmployeeAllowedDay(next, corrects?.spentOn, lookback)) return
               setSpentOn(next)
             }}
           />
@@ -50,40 +72,45 @@ export function ExpensesPage() {
         <Field label={t('expenseNotes')}>
           <TextArea value={notes} onChange={(event) => setNotes(event.target.value)} />
         </Field>
-        <Button className="w-full" variant="gold" size="lg" disabled={!ready} onClick={() => setReview(true)}>{t('expenseReview')}</Button>
+        {submitError && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-800">{submitError}</p>}
+        <Button className="w-full" variant="gold" size="lg" disabled={!ready} onClick={() => { setSubmitError(''); setReview(true) }}>{t('expenseReview')}</Button>
       </Panel>
       {!admin && (
-        <Panel className="mt-6 max-w-xl">
-          <h2 className="font-semibold">{t('yourExpenses')}</h2>
-          <ul className="mt-3 divide-y divide-white/60">
-            {app.expenses.filter((item) => item.submittedBy === app.user?.id).map((item) => (
-              <li key={item.id} className="flex items-center justify-between gap-3 py-3">
-                <span>
-                  <span className="block font-medium">{item.description}</span>
-                  <span className="block text-sm text-stone-500">{item.code} · {formatDate(item.spentOn)}</span>
-                </span>
-                <span className="text-right">
-                  <span className="block font-semibold tabular-nums">{app.money(item.amount)}</span>
-                  <StatusBadge status={item.status} />
-                </span>
-              </li>
-            ))}
-            {!app.expenses.some((item) => item.submittedBy === app.user?.id) && <li className="py-3 text-sm text-stone-500">{t('yourExpensesEmpty')}</li>}
-          </ul>
-        </Panel>
+        <div className="mt-6 max-w-xl">
+          <ExpensesCogsCalendar
+            onPickDay={(day) => {
+              if (!isEmployeeAllowedDay(day, corrects?.spentOn, lookback)) return
+              setSpentOn(day)
+            }}
+          />
+        </div>
       )}
       <Modal open={review} title={t('expenseReview')} onClose={() => setReview(false)}>
         <p className="text-sm text-stone-600">{admin ? t('expenseAdminModal') : t('expenseModalBody')}</p>
         <p className="mt-3 font-semibold">{description.trim()}</p>
         <p className="mt-1 text-sm text-stone-600">{amount != null ? app.money(amount) : ''} · {spentOn}</p>
+        {submitError && <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-800">{submitError}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => setReview(false)}>{t('salesBack')}</Button>
           <Button variant="gold" loading={loading} onClick={async () => {
             if (amount == null) return
             setLoading(true)
-            const result = await app.sendExpense({ description, amount, spentOn, notes, correctsId: corrects?.id })
-            setLoading(false)
-            if (!result.ok) return
+            setSubmitError('')
+            if (!admin && !corrects) {
+              const cogs = await saveToCogs()
+              setLoading(false)
+              if (!cogs.ok) {
+                setSubmitError(cogs.error)
+                return
+              }
+            } else {
+              const result = await app.sendExpense({ description, amount, spentOn, notes, correctsId: corrects?.id })
+              setLoading(false)
+              if (!result.ok) {
+                setSubmitError(result.error)
+                return
+              }
+            }
             setReview(false)
             if (admin) {
               navigate('/admin/expenses')
@@ -94,7 +121,7 @@ export function ExpensesPage() {
             setSpentOn(dateKey())
             setNotes('')
             if (params.get('correct')) setParams({}, { replace: true })
-          }}>{admin ? t('expenseSave') : t('expenseSubmit')}</Button>
+          }}>{admin || !corrects ? t('expenseSave') : t('expenseSubmit')}</Button>
         </div>
       </Modal>
     </div>

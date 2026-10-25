@@ -1,5 +1,10 @@
 import type { InventoryMovement, Product, SalesTransaction, StockAvailability, StockLevel, StockSnapshot } from '@/types'
 
+export function stockQtyFromReceived(received: number, conversionFactor: number) {
+  if (!Number.isFinite(received) || !Number.isFinite(conversionFactor)) return 0
+  return Math.round(received * conversionFactor * 100) / 100
+}
+
 export function confirmedQty(movements: InventoryMovement[], productId: string) {
   return movements.reduce((sum, movement) => (movement.productId === productId ? sum + movement.quantity : sum), 0)
 }

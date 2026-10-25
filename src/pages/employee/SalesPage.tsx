@@ -8,36 +8,74 @@ import { PageHeader, Panel } from '@/components/ui/Feedback'
 import { Modal } from '@/components/ui/Modal'
 import { useApp } from '@/context/AppContext'
 import { saleOptions } from '@/features/products/offer'
+import { BillsCogsCalendar } from '@/features/sales/BillsCogsCalendar'
+import { SalesCogsCalendar } from '@/features/sales/SalesCogsCalendar'
+import { syncDayBillToCogs } from '@/features/sales/syncBillCogs'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { BillPayment, RecordKind, SalePortion, SaleSize } from '@/types'
-import { formatDateTime, asDateKey, dateKey, employeeMinDateKey, formatDate, isEmployeeAllowedDay, isoOnEmployeeDay } from '@/utils/dates'
+import { formatDateTime, asDateKey, dateKey, employeeMinDateKey, isEmployeeAllowedDay, isoOnEmployeeDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { billBalance, saleTotal } from '@/utils/labels'
 import { cn } from '@/utils/cn'
 
-function BillSquare({ title, amount, note, paid, imageUrl, onClick }: { title: string; amount: string; note?: string; paid?: boolean; imageUrl?: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="relative isolate aspect-[3/4] min-w-0 overflow-hidden rounded-[1.4rem] text-left shadow-[0_16px_34px_rgba(28,25,23,0.22)] ring-1 ring-white/70 transition active:scale-[0.98]"
-    >
+function BillSquare({
+  title,
+  amount,
+  note,
+  paid,
+  imageUrl,
+  onClick,
+  square,
+}: {
+  title: string
+  amount: string
+  note?: string
+  paid?: boolean
+  imageUrl?: string
+  onClick?: () => void
+  square?: boolean
+}) {
+  const body = (
+    <>
       {imageUrl ? (
-        <img src={imageUrl} alt="" className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover blur-[3px]" />
+        <img
+          src={imageUrl}
+          alt=""
+          className={cn('pointer-events-none absolute inset-0 h-full w-full object-cover', square ? 'scale-125 blur-[8px]' : 'scale-110 blur-[3px]')}
+        />
       ) : (
         <span className="absolute inset-0 bg-[radial-gradient(circle_at_18%_12%,rgba(251,191,36,0.9),transparent_46%),linear-gradient(165deg,#44403c_0%,#1c1917_78%)]" />
       )}
-      <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-stone-950/15 via-stone-950/5 to-stone-950/80" />
+      <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-stone-950/20 via-stone-950/10 to-stone-950/80" />
       <span className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/30 to-transparent" />
-      <span className="relative flex h-full flex-col justify-between p-2.5">
-        {note ? <span className={cn('w-fit max-w-full truncate rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm', paid ? 'bg-emerald-800/80' : 'bg-amber-700/90')}>{note}</span> : <span />}
-        <span className="rounded-2xl border border-white/40 bg-white/20 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] backdrop-blur-md">
-          <span className="line-clamp-2 text-sm font-semibold leading-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]">{title}</span>
-          <span className="mt-1.5 block truncate text-base font-semibold tabular-nums leading-none text-amber-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">{amount}</span>
+      <span className={cn('relative flex h-full flex-col justify-between', square ? 'p-2' : 'p-2.5')}>
+        {note ? (
+          <span className={cn('w-fit max-w-full truncate rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm', paid ? 'bg-emerald-800/80' : 'bg-amber-700/90')}>
+            {note}
+          </span>
+        ) : (
+          <span />
+        )}
+        <span className={cn('border border-white/40 bg-white/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] backdrop-blur-md', square ? 'rounded-xl p-1.5' : 'rounded-2xl p-2.5')}>
+          <span className={cn('line-clamp-2 font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]', square ? 'text-[11px] leading-tight' : 'text-sm leading-4')}>{title}</span>
+          <span className={cn('mt-1 block truncate font-semibold tabular-nums leading-none text-amber-50 drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]', square ? 'text-xs' : 'text-base')}>{amount}</span>
         </span>
       </span>
-    </button>
+    </>
   )
+  const className = cn(
+    'relative isolate min-w-0 overflow-hidden shadow-[0_16px_34px_rgba(28,25,23,0.22)] ring-1 ring-white/70',
+    square ? 'aspect-square rounded-[1.15rem]' : 'aspect-[3/4] rounded-[1.4rem]',
+    onClick && 'text-left transition active:scale-[0.98]',
+  )
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        {body}
+      </button>
+    )
+  }
+  return <article className={className}>{body}</article>
 }
 
 interface Line {
@@ -63,6 +101,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
   const recordKind: RecordKind = source?.recordKind ?? kind
   const isBill = recordKind === 'bill'
   const remainingMode = app.user?.role !== 'admin' && app.settings.allowRemainingCount
+  const lookback = app.settings.recordLookbackDays
   const employeeSale = app.user?.role !== 'admin' && !isBill && !editing && !corrects
   const employeeBill = app.user?.role !== 'admin' && isBill && !editing && !corrects
   const employeeRecord = app.user?.role !== 'admin' && !editing
@@ -90,9 +129,9 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
   const [payment, setPayment] = useState<BillPayment>(isBill ? source?.paymentStatus ?? 'unpaid' : 'paid')
   const [recordDay, setRecordDay] = useState(() => {
     const day = asDateKey(source?.generatedAt ?? dateKey()) || dateKey()
-    return isEmployeeAllowedDay(day) ? day : dateKey()
+    return isEmployeeAllowedDay(day, undefined, lookback) ? day : dateKey()
   })
-  const [generatedAt, setGeneratedAt] = useState(source?.generatedAt ?? isoOnEmployeeDay(dateKey()))
+  const [generatedAt, setGeneratedAt] = useState(source?.generatedAt ?? isoOnEmployeeDay(dateKey(), lookback))
   const [notes, setNotes] = useState(source?.notes ?? '')
   const [review, setReview] = useState(false)
   const [openDraft, setOpenDraft] = useState<string | null>(null)
@@ -155,31 +194,6 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     : []
   const openSavedBill = myBills.find((item) => item.id === openSaved)
   const openGroup = billGroups.find((group) => group.key === openDraft)
-  const daySales = employeeSale
-    ? app.sales
-        .filter((sale) => sale.submittedBy === app.user?.id && sale.recordKind !== 'bill' && sale.status === 'approved' && !sale.isLoss && asDateKey(sale.reviewedAt || sale.submittedAt || sale.generatedAt) === recordDay)
-        .flatMap((sale) => {
-          const bill = sale.sourceBillId ? app.sales.find((item) => item.id === sale.sourceBillId) : undefined
-          const customer = sale.customerName.trim() || bill?.customerName.trim() || ''
-          if (sale.items.length) {
-            return sale.items.map((item) => ({
-              id: `${sale.id}-${item.id}`,
-              customer,
-              name: app.products.find((product) => product.id === item.productId)?.name ?? t('productsProduct'),
-              amount: item.quantity * item.unitPrice,
-            }))
-          }
-          if (typeof sale.settledAmount === 'number') {
-            const names = (bill?.items ?? []).map((item) => app.products.find((product) => product.id === item.productId)?.name).filter(Boolean)
-            return [{ id: sale.id, customer, name: names.join(', '), amount: sale.settledAmount }]
-          }
-          return []
-        })
-    : []
-
-  const dayListRef = useRef<HTMLDivElement>(null)
-  const dayPause = useRef(false)
-  const dayResume = useRef(0)
 
   useEffect(() => {
     if (!review && !openDraft) return
@@ -193,32 +207,6 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     if (lines.length > lineCount.current) newestLine.current?.scrollIntoView({ block: 'nearest' })
     lineCount.current = lines.length
   }, [lines.length])
-
-  useEffect(() => {
-    if (!employeeSale || daySales.length < 2) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    let frame = 0
-    const tick = () => {
-      const node = dayListRef.current
-      if (node && !dayPause.current && node.scrollHeight > node.clientHeight + 8) {
-        node.scrollTop += 0.45
-        if (node.scrollTop + node.clientHeight >= node.scrollHeight - 1) node.scrollTop = 0
-      }
-      frame = window.requestAnimationFrame(tick)
-    }
-    frame = window.requestAnimationFrame(tick)
-    return () => window.cancelAnimationFrame(frame)
-  }, [employeeSale, daySales.length])
-
-  function holdDayList() {
-    dayPause.current = true
-    window.clearTimeout(dayResume.current)
-  }
-
-  function releaseDayList() {
-    window.clearTimeout(dayResume.current)
-    dayResume.current = window.setTimeout(() => { dayPause.current = false }, 1400)
-  }
 
   function removeLine(id: string) {
     const remaining = lines.filter((item) => item.id !== id)
@@ -270,7 +258,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     }
     blankBillFields()
     setNotes('')
-    setGeneratedAt(isoOnEmployeeDay(recordDay))
+    setGeneratedAt(isoOnEmployeeDay(recordDay, lookback))
   }
 
   function addLine() {
@@ -358,7 +346,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     setSearch('')
     setSizeName('one')
     setPortion('full')
-    setGeneratedAt(isoOnEmployeeDay(recordDay))
+    setGeneratedAt(isoOnEmployeeDay(recordDay, lookback))
     setEditingLineId(null)
     setReview(false)
     setSubmitError('')
@@ -460,7 +448,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     setProductId('')
     setQuantity(null)
     setSearch('')
-    setGeneratedAt(isoOnEmployeeDay(recordDay))
+    setGeneratedAt(isoOnEmployeeDay(recordDay, lookback))
     if (params.get('correct')) navigate(isBill ? '/employee/bills' : '/employee/sales', { replace: true })
   }
 
@@ -489,12 +477,27 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     }
     setSubmittingId(openSavedBill.id)
     setPayError('')
-    const result = await app.recordBillPayment(openSavedBill.id, payAmount)
-    setSubmittingId(null)
-    if (!result.ok) {
-      setPayError(result.error)
+    const cogs = await syncDayBillToCogs(app, {
+      day: asDateKey(openSavedBill.generatedAt) || dateKey(),
+      customerName: openSavedBill.customerName,
+      amount: saleTotal(openSavedBill.items),
+      paidAmount: (openSavedBill.amountPaid ?? 0) + payAmount,
+      products: openSavedBill.items.map((item) => app.products.find((product) => product.id === item.productId)?.name ?? '').filter(Boolean).join(', '),
+    })
+    if (!cogs.ok) {
+      setSubmittingId(null)
+      setPayError(cogs.error)
       return
     }
+    if (!remainingMode) {
+      const result = await app.recordBillPayment(openSavedBill.id, payAmount)
+      if (!result.ok) {
+        setSubmittingId(null)
+        setPayError(result.error)
+        return
+      }
+    }
+    setSubmittingId(null)
     const left = remaining - payAmount
     setPaying(false)
     setPayAmount(null)
@@ -554,11 +557,11 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
       <div className="space-y-4">
         <PageHeader title={t('salesRecordTitle')} description={t('salesBlockedBody')} />
         <Panel className="space-y-4">
-          <p className="text-sm leading-6 text-stone-600">{t('salesBlockedBody')}</p>
-          <Link to="/employee/remaining" className="inline-flex rounded-2xl bg-amber-700 px-4 py-3 text-sm font-semibold text-white">
+          <Link to="/employee/remaining" className="inline-flex min-h-11 items-center rounded-2xl bg-amber-700 px-4 py-3 text-sm font-semibold text-white">
             {t('navRemaining')}
           </Link>
         </Panel>
+        <SalesCogsCalendar />
       </div>
     )
   }
@@ -582,14 +585,14 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
               <Field label={t('recordDay')} hint={t('recordDayHint')}>
                 <TextInput
                   type="date"
-                  min={employeeMinDateKey()}
+                  min={employeeMinDateKey(lookback)}
                   max={dateKey()}
                   value={recordDay}
                   onChange={(event) => {
                     const next = event.target.value
-                    if (!isEmployeeAllowedDay(next)) return
+                    if (!isEmployeeAllowedDay(next, undefined, lookback)) return
                     setRecordDay(next)
-                    setGeneratedAt(isoOnEmployeeDay(next))
+                    setGeneratedAt(isoOnEmployeeDay(next, lookback))
                   }}
                 />
               </Field>
@@ -676,7 +679,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
                   amount={app.money(billBalance(bill))}
                   note={(bill.amountPaid ?? 0) > 0 ? `${t('billPaid')} ${app.money(bill.amountPaid ?? 0)}` : t('billUnpaid')}
                   imageUrl={app.products.find((product) => product.id === bill.items[0]?.productId)?.imageUrl}
-                  onClick={() => { setPayError(''); setPaying(false); setPayAmount(null); setOpenSaved(bill.id) }}
+                  onClick={() => { setPayError(''); setPaying(true); setPayAmount(null); setOpenSaved(bill.id) }}
                 />
               ))}
               {billGroups.map((group) => (
@@ -711,41 +714,14 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
         </Panel>
       </div>
       {employeeSale && (
-        <section className="relative mt-4 overflow-hidden rounded-[1.75rem] border border-white/70 bg-white/75 p-4 shadow-[0_18px_40px_rgba(28,25,23,0.08)] backdrop-blur-xl">
-          <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-amber-200/50 blur-2xl" />
-          <div className="relative flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight text-ink">{t('salesDayTitle')}</h2>
-              <p className="mt-1 text-sm text-stone-500">{formatDate(dateKey())}</p>
-            </div>
-            <span className="grid h-11 min-w-11 place-items-center rounded-2xl border border-amber-200/80 bg-amber-50 px-3 text-sm font-semibold tabular-nums text-amber-950">{daySales.length}</span>
-          </div>
-          {daySales.length > 0 ? (
-            <div
-              ref={dayListRef}
-              className="sales-day-list relative mt-4 max-h-80 overflow-y-auto overscroll-contain pr-1"
-              onPointerDown={holdDayList}
-              onPointerUp={releaseDayList}
-              onPointerCancel={releaseDayList}
-              onWheel={() => { holdDayList(); releaseDayList() }}
-            >
-              <ul className="grid gap-2.5">
-                {daySales.map((line, index) => (
-                  <li key={line.id} className="flex items-center gap-3 rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-[0_8px_20px_rgba(28,25,23,0.05)]">
-                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-amber-500 to-amber-800 text-sm font-semibold text-white shadow-md shadow-amber-900/20">{index + 1}</span>
-                    <span className="min-w-0 flex-1">
-                      {line.customer ? <span className="block truncate text-base font-semibold leading-5 text-ink">{line.customer}</span> : null}
-                      {line.name ? <span className={cn('block truncate text-sm leading-5 text-stone-500', line.customer && 'mt-0.5')}>{line.name}</span> : null}
-                    </span>
-                    <span className="shrink-0 rounded-xl bg-stone-950 px-3 py-2 text-sm font-semibold tabular-nums text-white">{app.money(line.amount)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <p className="relative mt-4 rounded-2xl border border-dashed border-stone-300 bg-white/60 px-3 py-8 text-center text-sm text-stone-500">{t('salesDayEmpty')}</p>
-          )}
-        </section>
+        <div className="mt-4">
+          <SalesCogsCalendar />
+        </div>
+      )}
+      {employeeBill && (
+        <div className="mt-4">
+          <BillsCogsCalendar />
+        </div>
       )}
       {priced.length > 0 && (
         <div className="fixed inset-x-3 z-30 md:hidden" style={{ bottom: 'calc(6.75rem + env(safe-area-inset-bottom))' }}>
@@ -864,7 +840,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
               </>
             )}
             <p className="mt-4 text-xs font-medium uppercase tracking-wide text-stone-500">{t('billRemaining')}</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums text-ink">{app.money(billBalance(openSavedBill))}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-ink">{app.money(Math.max(0, billBalance(openSavedBill) - (paying && payAmount != null ? payAmount : 0)))}</p>
           </div>
           <ul className="mt-3 space-y-2">
             {openSavedBill.items.map((item) => {
@@ -930,7 +906,10 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
           </div>
           {paying && (
             <div className="mt-4 space-y-3">
-              <Field label={t('billAmountPaid')}><NumberInput value={payAmount} onValueChange={setPayAmount} /></Field>
+              <Field label={t('billAmountPaid')} hint={t('cogsDebtPayBody')}>
+                <NumberInput value={payAmount} onValueChange={(value) => setPayAmount(value == null ? null : Math.min(billBalance(openSavedBill), value))} />
+              </Field>
+              <Button type="button" className="w-full" variant="secondary" disabled={submittingId !== null} onClick={() => setPayAmount(billBalance(openSavedBill))}>{t('cogsDebtFullyPaid')}</Button>
               <Button type="button" className="w-full" variant="gold" loading={submittingId === openSavedBill.id} disabled={submittingId !== null} onClick={() => void applyPayment()}>{t('billUpdate')}</Button>
             </div>
           )}

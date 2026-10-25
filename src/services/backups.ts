@@ -32,6 +32,7 @@ export function workspacePayload(db: Database) {
     priceChanges: db.priceChanges ?? [],
     suppliers: db.suppliers,
     stockIns: db.stockIns,
+    restockOrders: db.restockOrders ?? [],
     sales: db.sales,
     movements: db.movements,
     activityTypes: db.activityTypes,

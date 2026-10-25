@@ -43,11 +43,20 @@ export interface StyledReport {
   tables?: Array<{ title: string; columns: ReportColumn[]; rows: string[][] }>
   notes?: string[]
   stamp?: string
+  landscape?: boolean
 }
 
 class Painter {
   pages: string[][] = [[]]
-  y = PAGE_H - 28
+  pageW: number
+  pageH: number
+  y: number
+
+  constructor(landscape = false) {
+    this.pageW = landscape ? PAGE_H : PAGE_W
+    this.pageH = landscape ? PAGE_W : PAGE_H
+    this.y = this.pageH - 28
+  }
 
   get page() {
     return this.pages[this.pages.length - 1]
@@ -59,8 +68,8 @@ class Painter {
 
   newPage() {
     this.pages.push([])
-    this.y = PAGE_H - 36
-    this.push(`${rgb('#f4f1eb')} rg 0 0 ${PAGE_W} ${PAGE_H} re f`)
+    this.y = this.pageH - 36
+    this.push(`${rgb('#f4f1eb')} rg 0 0 ${this.pageW} ${this.pageH} re f`)
   }
 
   ensure(height: number) {
@@ -91,24 +100,24 @@ class Painter {
 }
 
 function paintHeader(doc: Painter, report: StyledReport) {
-  doc.fillRect(0, 0, PAGE_W, PAGE_H, '#f4f1eb')
-  doc.fillRect(0, PAGE_H - 92, PAGE_W, 92, '#161412')
-  doc.fillRect(0, PAGE_H - 96, PAGE_W, 4, '#b45309')
-  doc.text('MANYARA PUB', MARGIN, PAGE_H - 36, 9, '#fbbf24', true)
-  doc.text(report.title, MARGIN, PAGE_H - 58, 18, '#fafaf9', true)
-  if (report.subtitle) doc.text(report.subtitle, MARGIN, PAGE_H - 76, 10, '#d6d3d1')
-  doc.text(report.dateLabel, PAGE_W - MARGIN, PAGE_H - 58, 10, '#fde68a', false, 'right')
+  doc.fillRect(0, 0, doc.pageW, doc.pageH, '#f4f1eb')
+  doc.fillRect(0, doc.pageH - 92, doc.pageW, 92, '#161412')
+  doc.fillRect(0, doc.pageH - 96, doc.pageW, 4, '#b45309')
+  doc.text('MANYARA PUB', MARGIN, doc.pageH - 36, 9, '#fbbf24', true)
+  doc.text(report.title, MARGIN, doc.pageH - 58, 18, '#fafaf9', true)
+  if (report.subtitle) doc.text(report.subtitle, MARGIN, doc.pageH - 76, 10, '#d6d3d1')
+  doc.text(report.dateLabel, doc.pageW - MARGIN, doc.pageH - 58, 10, '#fde68a', false, 'right')
   if (report.stamp) {
-    doc.fillRect(PAGE_W - 148, PAGE_H - 86, 112, 18, '#b45309')
-    doc.text(report.stamp, PAGE_W - MARGIN, PAGE_H - 74, 8, '#fffbeb', true, 'right', 100)
+    doc.fillRect(doc.pageW - 148, doc.pageH - 86, 112, 18, '#b45309')
+    doc.text(report.stamp, doc.pageW - MARGIN, doc.pageH - 74, 8, '#fffbeb', true, 'right', 100)
   }
-  doc.y = PAGE_H - 118
+  doc.y = doc.pageH - 118
 }
 
 function paintKpis(doc: Painter, kpis: ReportKpi[]) {
   if (!kpis.length) return
   const gap = 8
-  const width = (PAGE_W - MARGIN * 2 - gap * (kpis.length - 1)) / kpis.length
+  const width = (doc.pageW - MARGIN * 2 - gap * (kpis.length - 1)) / kpis.length
   doc.ensure(54)
   kpis.forEach((item, index) => {
     const x = MARGIN + index * (width + gap)
@@ -136,7 +145,7 @@ function paintChart(doc: Painter, title: string, bars: ReportBar[]) {
     doc.text(bar.label, MARGIN, y, 8, '#44403c', false, 'left', 110)
     doc.fillRect(MARGIN + 118, y - 2, track, 10, '#e7e5e4')
     doc.fillRect(MARGIN + 118, y - 2, Math.max(6, (bar.value / max) * track), 10, '#b45309')
-    doc.text(bar.caption ?? String(bar.value), PAGE_W - MARGIN, y, 8, '#1c1917', true, 'right')
+    doc.text(bar.caption ?? String(bar.value), doc.pageW - MARGIN, y, 8, '#1c1917', true, 'right')
     doc.y -= row
   })
   doc.y -= 8
@@ -144,7 +153,7 @@ function paintChart(doc: Painter, title: string, bars: ReportBar[]) {
 
 function paintTable(doc: Painter, title: string, columns: ReportColumn[], rows: string[][]) {
   doc.heading(title)
-  const inner = PAGE_W - MARGIN * 2
+  const inner = doc.pageW - MARGIN * 2
   const widths = columns.map((column) => column.width * inner)
   const drawRow = (cells: string[], header: boolean, zebra: boolean) => {
     const height = 18
@@ -172,7 +181,7 @@ function paintTable(doc: Painter, title: string, columns: ReportColumn[], rows: 
   doc.y -= 14
 }
 
-function assemble(pages: string[][]) {
+function assemble(pages: string[][], pageW: number, pageH: number) {
   const streams = pages.map((commands) => commands.join('\n'))
   const offsets: number[] = []
   const chunks: string[] = []
@@ -199,7 +208,7 @@ function assemble(pages: string[][]) {
     push(page.contentId, `<< /Length ${page.stream.length} >>\nstream\n${page.stream}\nendstream`)
     push(
       page.pageId,
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${page.contentId} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${page.contentId} 0 R >>`,
     )
   }
   let xref = `xref\n0 ${nextId}\n0000000000 65535 f \n`
@@ -218,7 +227,7 @@ function save(filename: string, file: string) {
 }
 
 export function downloadStyledPdf(filename: string, report: StyledReport) {
-  const doc = new Painter()
+  const doc = new Painter(Boolean(report.landscape))
   paintHeader(doc, report)
   paintKpis(doc, report.kpis ?? [])
   for (const chart of report.charts ?? []) paintChart(doc, chart.title, chart.bars)
@@ -232,7 +241,7 @@ export function downloadStyledPdf(filename: string, report: StyledReport) {
     const label = `Page ${index + 1} of ${doc.pages.length}  |  Manyara Pub`
     page.push(`BT /F1 8 Tf ${rgb('#a8a29e')} rg ${MARGIN} 24 Td (${pdfEscape(label)}) Tj ET`)
   })
-  save(filename, assemble(doc.pages))
+  save(filename, assemble(doc.pages, doc.pageW, doc.pageH))
 }
 
 export function downloadTextPdf(filename: string, lines: string[]) {

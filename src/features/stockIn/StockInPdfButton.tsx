@@ -1,28 +1,41 @@
 import { Download } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { approvedStockIns, downloadApprovedStockInPdf } from '@/features/stockIn/stockInPdf'
+import { approvedStockIns, downloadApprovedStockInPdf, stockInsOnDay } from '@/features/stockIn/stockInPdf'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
+import type { StockInTransaction } from '@/types'
 import { cn } from '@/utils/cn'
+import { formatDate } from '@/utils/dates'
 
-export function StockInPdfButton({ className }: { className?: string }) {
+export function StockInPdfButton({
+  className,
+  day,
+  records,
+  variant = 'secondary',
+}: {
+  className?: string
+  day?: string
+  records?: StockInTransaction[]
+  variant?: 'secondary' | 'gold'
+}) {
   const app = useApp()
   const { t } = useI18n()
-  const count = approvedStockIns(app.stockIns).length
+  const source = records ?? app.stockIns
+  const count = day ? stockInsOnDay(source, day).length : approvedStockIns(source).length
   return (
     <Button
       type="button"
-      variant="secondary"
+      variant={variant}
       className={cn(className)}
       disabled={!count}
       onClick={() =>
         downloadApprovedStockInPdf({
-          records: app.stockIns,
+          records: source,
           products: app.products,
           money: app.money,
           nameOf: app.nameOf,
           business: app.settings.businessName,
-          title: t('stockInPdfTitle'),
+          title: day ? `${t('stockInPdfDayTitle')} · ${formatDate(day)}` : t('stockInPdfTitle'),
           deliveriesTitle: t('stockInPdfDeliveries'),
           linesTitle: t('stockInPdfLines'),
           productsTitle: t('stockInPdfProducts'),
@@ -37,12 +50,13 @@ export function StockInPdfButton({ className }: { className?: string }) {
           deliveriesLabel: t('stockMany'),
           unitsLabel: t('dashUnits'),
           costLabel: t('stockTotal'),
-          emptyNote: t('stockInPdfEmpty'),
+          emptyNote: day ? t('stockInPdfDayEmpty') : t('stockInPdfEmpty'),
+          day,
         })
       }
     >
       <Download className="h-4 w-4" />
-      {t('stockInPdf')}
+      {day ? t('stockInPdfDay') : t('stockInPdf')}
     </Button>
   )
 }

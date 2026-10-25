@@ -10,15 +10,17 @@ export function Field({
   error,
   children,
   light = false,
+  className,
 }: {
   label: string
   hint?: string
   error?: string
   children: ReactNode
   light?: boolean
+  className?: string
 }) {
   return (
-    <label className="block space-y-1.5">
+    <label className={cn('block min-w-0 space-y-1.5', className)}>
       <span className={cn('text-sm font-medium', light ? 'text-amber-50/85' : 'text-ink')}>{label}</span>
       {children}
       {error ? <span className={cn('block text-sm', light ? 'text-rose-200' : 'text-rose-700')}>{error}</span> : hint ? <span className={cn('block text-sm', light ? 'text-white/60' : 'text-stone-500')}>{hint}</span> : null}

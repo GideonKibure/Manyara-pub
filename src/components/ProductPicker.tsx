@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Product, StockSnapshot } from '@/types'
 import { StockBadge } from '@/components/ui/Feedback'
 import { useApp } from '@/context/AppContext'
@@ -39,31 +39,56 @@ export function StaffCell({ id }: { id?: string }) {
   return <PersonName name={profile?.fullName ?? nameOf(id)} src={profile?.imageUrl} username={profile?.username} />
 }
 
-export function PersonPhoto({ src, name, className }: { src?: string; name: string; className?: string }) {
-  if (!src) {
-    return <span className={cn('grid shrink-0 place-items-center rounded-full bg-amber-100 text-sm font-semibold text-amber-950', className)}>{name.slice(0, 1).toUpperCase()}</span>
-  }
-  return <img src={src} alt="" className={cn('shrink-0 rounded-full object-cover', className)} />
-}
-
-export function ProductThumb({ src, name, className }: { src?: string; name: string; className?: string }) {
+function LazyPhoto({
+  src,
+  name,
+  className,
+  fallback,
+}: {
+  src?: string
+  name: string
+  className?: string
+  fallback: string
+}) {
   const [ready, setReady] = useState(false)
-  if (!src) {
-    return <span className={cn('grid place-items-center rounded-lg bg-stone-200 text-sm font-semibold text-stone-600', className)}>{name.slice(0, 1).toUpperCase()}</span>
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    setReady(false)
+    setFailed(false)
+  }, [src])
+
+  if (!src || failed) {
+    return <span className={cn('grid shrink-0 place-items-center', fallback, className)}>{name.slice(0, 1).toUpperCase()}</span>
   }
+
   return (
-    <span className={cn('relative overflow-hidden rounded-lg bg-stone-200', className)}>
-      {!ready && <span className="thumb-shimmer absolute inset-0" aria-hidden="true" />}
+    <span className={cn('relative shrink-0 overflow-hidden', className)}>
+      {!ready ? <span className="lazy-load" aria-hidden="true" /> : null}
       <img
         src={src}
         alt=""
         loading="lazy"
         decoding="async"
-        onLoad={() => setReady(true)}
-        className={cn('h-full w-full object-cover transition-opacity duration-500', ready ? 'opacity-100' : 'opacity-0')}
+        onLoad={(event) => {
+          if (event.currentTarget.naturalWidth > 0) setReady(true)
+        }}
+        onError={() => setFailed(true)}
+        ref={(node) => {
+          if (node && node.complete && node.naturalWidth > 0) setReady((shown) => shown || true)
+        }}
+        className={cn('pointer-events-none h-full w-full object-cover', ready ? 'relative' : 'invisible absolute inset-0')}
       />
     </span>
   )
+}
+
+export function PersonPhoto({ src, name, className }: { src?: string; name: string; className?: string }) {
+  return <LazyPhoto src={src} name={name} className={cn('rounded-full', className)} fallback="bg-amber-100 text-sm font-semibold text-amber-950" />
+}
+
+export function ProductThumb({ src, name, className }: { src?: string; name: string; className?: string }) {
+  return <LazyPhoto src={src} name={name} className={cn('rounded-lg', className)} fallback="bg-stone-200 text-sm font-semibold text-stone-600" />
 }
 
 export function ProductPicker({

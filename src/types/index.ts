@@ -121,6 +121,39 @@ export interface StockInItem {
   totalCost: number
 }
 
+export type RestockOrderStatus = 'not_received' | 'partial' | 'received'
+
+export interface RestockOrderItem {
+  id: string
+  productId: string
+  receivedQuantity: number
+  receiveUnitId: string
+  conversionFactor: number
+  stockQuantity: number
+  received?: boolean
+  receivedAt?: string
+}
+
+export interface RestockOrder {
+  id: string
+  code: string
+  notes: string
+  status: RestockOrderStatus
+  submittedBy: string
+  submittedAt: string
+  receivedAt?: string
+  receivedBy?: string
+  stockInId?: string
+  receivedEditUsed?: boolean
+  items: RestockOrderItem[]
+}
+
+export interface RestockOrderDraft {
+  id?: string
+  notes?: string
+  items: Array<{ productId: string; receivedQuantity: number }>
+}
+
 export interface StockInTransaction {
   id: string
   code: string
@@ -244,6 +277,7 @@ export interface BusinessSettings {
   currencySymbol: string
   lowStockAlerts: boolean
   allowRemainingCount: boolean
+  recordLookbackDays: 1 | 2 | 3 | 5 | 7
   updatedAt: string
 }
 
@@ -278,6 +312,12 @@ export interface CogsExpenseLine {
   notes: string
 }
 
+export interface CogsMobileItem {
+  id?: string
+  amount: number
+  date: string
+}
+
 export interface DayClose {
   id: string
   day: string
@@ -286,6 +326,7 @@ export interface DayClose {
   debts: DayDebt[]
   lines: CogsLine[]
   expenseItems: CogsExpenseLine[]
+  mobileItems: CogsMobileItem[]
   mobileReceived: number
   expenseTotal: number
   status: ApprovalStatus
@@ -336,13 +377,7 @@ export interface Database {
   priceChanges: ProductPriceChange[]
   suppliers: Supplier[]
   stockIns: StockInTransaction[]
-  sales: SalesTransaction[]
-  movements: InventoryMovement[]
-  availability?: StockAvailability[]
-  activityTypes: ActivityType[]
-  activities: ActivityTransaction[]
-  expenses: ExpenseTransaction[]
-  dayCloses: DayClose[]
+  restockOrders: RestockOrder[]
   notifications: AppNotification[]
   auditLogs: AuditLog[]
   settings: BusinessSettings

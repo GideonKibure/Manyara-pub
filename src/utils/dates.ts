@@ -108,6 +108,21 @@ export function recentDateKeys(count: number, now = new Date()) {
   return keys
 }
 
+export type MonthGridCell = { key: string; day: number } | null
+
+export function monthGridCells(year: number, month: number): MonthGridCell[] {
+  const first = new Date(year, month, 1)
+  const padStart = (first.getDay() + 6) % 7
+  const days = new Date(year, month + 1, 0).getDate()
+  const cells: MonthGridCell[] = []
+  for (let index = 0; index < padStart; index += 1) cells.push(null)
+  for (let day = 1; day <= days; day += 1) {
+    cells.push({ key: `${year}-${pad(month + 1)}-${pad(day)}`, day })
+  }
+  while (cells.length % 7) cells.push(null)
+  return cells
+}
+
 export function eachDateKey(from: string, to: string) {
   const keys: string[] = []
   const [year, month, day] = from.split('-').map(Number)

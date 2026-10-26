@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { buildDashboard } from '@/features/reports/metrics'
 import { allSnapshots } from '@/features/inventory/stock'
 import { dataSourceLabel, isSupabaseConfigured, supabase } from '@/lib/supabase'
+import { canViewSupplierContacts } from '@/utils/access'
 import { IDLE_GRACE_MS, IDLE_MS, markLockReason, type LockReason } from '@/lib/sessionLock'
 import { DB_KEY, loadDatabase, loadSession, resetDatabase, saveDatabase, saveSession } from '@/services/localDb'
 import {
@@ -18,8 +19,10 @@ import {
   declineSaleRemote,
   declineStockInRemote,
   loadWorkspace,
+  deleteNotificationsRemote,
   readAllNotificationsRemote,
   readNotificationRemote,
+  setNotificationsReadRemote,
   requestResetRemote,
   saveActivityTypeRemote,
   saveCategoryRemote,
@@ -33,6 +36,7 @@ import {
   saveSettingsRemote,
   removeSupplierRemote,
   saveSupplierRemote,
+  updateSupplierRemote,
   saveUnitRemote,
   editSaleRemote,
   editStockInRemote,
@@ -79,10 +83,13 @@ import {
   deleteUnit,
   clearBusinessData,
   createSupplier,
+  updateSupplier,
   deleteSupplier,
   createUnit,
   markAllNotificationsRead,
   markNotificationRead,
+  removeNotifications,
+  setNotificationsRead,
   rejectActivity,
   rejectExpense,
   rejectSale,
@@ -193,11 +200,20 @@ interface AppContextValue {
   removeCategory: (id: string) => Promise<ActionResult>
   addUnit: (input: { name: string; abbreviation: string }) => Promise<ActionResult>
   removeUnit: (id: string) => Promise<ActionResult>
-  addSupplier: (input: { name: string; phone: string }) => Promise<ActionResult>
+  addSupplier: (input: { name: string; phone: string; imageUrl?: string }) => Promise<ActionResult>
+  editSupplier: (id: string, patch: { name?: string; phone?: string; imageUrl?: string }) => Promise<ActionResult>
   removeSupplier: (id: string) => Promise<ActionResult>
   addProduct: (input: ProductDraft) => Promise<ActionResult>
   editProduct: (id: string, input: ProductDraft) => Promise<ActionResult>
-  applyPriceChange: (input: { productId: string; day: string; costPrice: number; sellingPrice: number }) => Promise<ActionResult>
+  applyPriceChange: (input: {
+    productId: string
+    day: string
+    costPrice: number
+    sellingPrice: number
+    sizes?: Database['products'][number]['sizes']
+    cupPrice?: number | null
+    halfPrice?: number | null
+  }) => Promise<ActionResult>
   removeProduct: (id: string) => Promise<ActionResult>
   clearBusiness: () => Promise<ActionResult>
   addEmployee: (input: EmployeeDraft) => Promise<ActionResult>
@@ -266,6 +282,8 @@ interface AppContextValue {
   ) => Promise<ActionResult>
   readNotification: (id: string) => Promise<ActionResult>
   readAllNotifications: () => Promise<ActionResult>
+  setNotificationsRead: (ids: string[], read: boolean) => Promise<ActionResult>
+  removeNotifications: (ids: string[]) => Promise<ActionResult>
   restoreDemo: () => ActionResult
 }
 
@@ -576,7 +594,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     categories: db.categories,
     units: db.units,
     products: db.products,
-    suppliers: db.suppliers,
+    suppliers: canViewSupplierContacts(user)
+      ? db.suppliers
+      : db.suppliers.map((supplier) => ({ ...supplier, phone: '', imageUrl: undefined })),
     stockIns: db.stockIns,
     restockOrders: db.restockOrders ?? [],
     sales: db.sales,
@@ -685,6 +705,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addUnit: async (input) => (remote ? runRemote(() => saveUnitRemote(input)) : run((database, userId) => createUnit(database, userId, input))),
     removeUnit: async (id) => (remote ? runRemote(() => deleteUnitRemote(id)) : run((database, userId) => deleteUnit(database, userId, id))),
     addSupplier: async (input) => (remote ? runRemote(() => saveSupplierRemote(input)) : run((database, userId) => createSupplier(database, userId, input))),
+    editSupplier: async (id, patch) => (remote ? runRemote(() => updateSupplierRemote(id, patch)) : run((database, userId) => updateSupplier(database, userId, id, patch))),
     removeSupplier: async (id) => (remote ? runRemote(() => removeSupplierRemote(id)) : run((database, userId) => deleteSupplier(database, userId, id))),
     addProduct: async (input) => (remote ? runRemote(() => saveProductRemote(null, input)) : run((database, userId) => createProduct(database, userId, input))),
     editProduct: async (id, input) => (remote ? runRemote(() => saveProductRemote(id, input)) : run((database, userId) => updateProduct(database, userId, id, input))),
@@ -828,6 +849,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveActivityType: async (id, input) => (remote ? runRemote(() => saveActivityTypeRemote(id, input)) : run((database, userId) => updateActivityType(database, userId, id, input))),
     readNotification: async (id) => (remote ? runRemote(() => readNotificationRemote(id)) : run((database, userId) => markNotificationRead(database, userId, id))),
     readAllNotifications: async () => (remote ? runRemote(() => readAllNotificationsRemote()) : run((database, userId) => markAllNotificationsRead(database, userId))),
+    setNotificationsRead: async (ids, read) =>
+      remote ? runRemote(() => setNotificationsReadRemote(ids, read)) : run((database, userId) => setNotificationsRead(database, userId, ids, read)),
+    removeNotifications: async (ids) =>
+      remote ? runRemote(() => deleteNotificationsRemote(ids)) : run((database, userId) => removeNotifications(database, userId, ids)),
     restoreDemo: () => {
       if (remote) return { ok: false, error: 'Demo data stays in this browser. Live records are in Supabase.' }
       if (user?.role !== 'admin') return { ok: false, error: 'Only an administrator can restore demo data.' }

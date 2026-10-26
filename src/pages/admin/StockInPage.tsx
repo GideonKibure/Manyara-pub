@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { ApproveAllButton } from '@/components/ui/ApproveAll'
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { StockInPdfButton } from '@/features/stockIn/StockInPdfButton'
 import { StockInRecordCard } from '@/features/stockIn/StockInRecordCard'
 import { stockInMatchesQuery, stockInProductNames } from '@/features/stockIn/stockInSearch'
+import { PersonPhoto } from '@/components/ProductPicker'
 import { Field, SelectInput, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel } from '@/components/ui/Feedback'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
@@ -15,6 +16,7 @@ import { useI18n } from '@/i18n/LanguageContext'
 import type { StockInTransaction } from '@/types'
 import { cn } from '@/utils/cn'
 import { dateKey, formatDate } from '@/utils/dates'
+import { storeProfileImage } from '@/utils/image'
 
 function monthParts(cursor: Date) {
   return { year: cursor.getFullYear(), month: cursor.getMonth() }
@@ -53,6 +55,9 @@ export function StockInPage() {
   const [suppliersOpen, setSuppliersOpen] = useState(false)
   const [supplierName, setSupplierName] = useState('')
   const [supplierPhone, setSupplierPhone] = useState('')
+  const [supplierPhoto, setSupplierPhoto] = useState('')
+  const photoRef = useRef<HTMLInputElement>(null)
+  const [photoFor, setPhotoFor] = useState<string | null>(null)
   const [removing, setRemoving] = useState('')
   const [removingBusy, setRemovingBusy] = useState(false)
   const [approving, setApproving] = useState(false)
@@ -115,11 +120,17 @@ export function StockInPage() {
           <ul className="mt-3 divide-y divide-line">
             {app.suppliers.map((supplier) => (
               <li key={supplier.id} className="flex items-center justify-between gap-3 py-3">
-                <span>
-                  <span className="block font-medium">{supplier.name}</span>
-                  <span className="block text-sm text-stone-500">{supplier.phone || '—'}</span>
+                <span className="flex min-w-0 items-center gap-3">
+                  <PersonPhoto src={supplier.imageUrl} name={supplier.name} className="h-12 w-12" />
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{supplier.name}</span>
+                    <span className="block text-sm text-stone-500">{supplier.phone || '—'}</span>
+                  </span>
                 </span>
-                <Button size="sm" variant="danger" onClick={() => setRemoving(supplier.id)}>{t('suppliersRemove')}</Button>
+                <span className="flex shrink-0 flex-wrap justify-end gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => { setPhotoFor(supplier.id); photoRef.current?.click() }}>{supplier.imageUrl ? t('suppliersChangePhoto') : t('suppliersPhoto')}</Button>
+                  <Button size="sm" variant="danger" onClick={() => setRemoving(supplier.id)}>{t('suppliersRemove')}</Button>
+                </span>
               </li>
             ))}
             {!app.suppliers.length && <li className="py-3 text-sm text-stone-500">{t('suppliersEmpty')}</li>}
@@ -241,19 +252,43 @@ export function StockInPage() {
       <Modal open={Boolean(detail)} title={t('deliveryDetails')} onClose={() => setDetail(null)} wide>
         {detail && <StockInDetail record={app.stockIns.find((item) => item.id === detail.id) ?? detail} mode="review" />}
       </Modal>
+      <input
+        ref={photoRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={async (event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ''
+          if (!file) return
+          try {
+            const imageUrl = await storeProfileImage(file)
+            if (photoFor) await app.editSupplier(photoFor, { imageUrl })
+            else setSupplierPhoto(imageUrl)
+          } catch {
+            /* keep previous photo */
+          }
+          setPhotoFor(null)
+        }}
+      />
       <Modal open={supplierOpen} title={t('pageAddSupplier')} onClose={() => setSupplierOpen(false)}>
         <form
           className="space-y-4"
           onSubmit={async (event) => {
             event.preventDefault()
-            const result = await app.addSupplier({ name: supplierName, phone: supplierPhone })
+            const result = await app.addSupplier({ name: supplierName, phone: supplierPhone, imageUrl: supplierPhoto })
             if (result.ok) {
               setSupplierName('')
               setSupplierPhone('')
+              setSupplierPhoto('')
               setSupplierOpen(false)
             }
           }}
         >
+          <div className="flex items-center gap-3">
+            <PersonPhoto src={supplierPhoto} name={supplierName || t('pageAddSupplier')} className="h-16 w-16" />
+            <Button type="button" variant="secondary" onClick={() => { setPhotoFor(null); photoRef.current?.click() }}>{supplierPhoto ? t('suppliersChangePhoto') : t('suppliersPhoto')}</Button>
+          </div>
           <Field label={t('fieldName')}><TextInput value={supplierName} onChange={(event) => setSupplierName(event.target.value)} required /></Field>
           <Field label={t('phone')}><TextInput value={supplierPhone} onChange={(event) => setSupplierPhone(event.target.value)} /></Field>
           <Button type="submit" variant="gold">{t('saveSupplier')}</Button>

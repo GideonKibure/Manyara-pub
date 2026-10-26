@@ -75,6 +75,23 @@ export async function clearBusinessData() {
   return client.rpc('clear_business_data')
 }
 
+export async function adminSetStaffAccess(
+  id: string,
+  role: string,
+  canSubmit: boolean,
+  canViewStock: boolean,
+  canViewSuppliers: boolean,
+) {
+  const client = await requireClient()
+  return client.rpc('admin_set_staff_access', {
+    p_id: id,
+    p_role: role,
+    p_can_submit: canSubmit,
+    p_can_view_stock: canViewStock,
+    p_can_view_suppliers: canViewSuppliers,
+  })
+}
+
 export async function adminUpdateEmployee(id: string, fullName: string, phone: string, username: string, password: string) {
   const client = await requireClient()
   return client.rpc('admin_update_employee', {

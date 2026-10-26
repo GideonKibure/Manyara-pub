@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react'
+import { StaffAccessFields } from '@/features/staff/StaffAccessFields'
+import { assignedRoleOf, roleLabelKey, type AssignedRole } from '@/utils/access'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { Button } from '@/components/ui/Button'
 import { DataTable } from '@/components/ui/DataTable'
-import { Checkbox, Field, TextInput } from '@/components/ui/Fields'
+import { Field, TextInput } from '@/components/ui/Fields'
 import { PageHeader } from '@/components/ui/Feedback'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
 import { PersonName } from '@/components/ProductPicker'
@@ -21,7 +23,7 @@ export function EmployeesPage() {
   const [removing, setRemoving] = useState<Profile | null>(null)
   const [removingBusy, setRemovingBusy] = useState(false)
   const [password, setPassword] = useState('')
-  const employees = app.profiles.filter((profile) => profile.role === 'employee')
+  const employees = app.profiles.filter((profile) => profile.role !== 'admin')
   return (
     <div>
       <PageHeader title={t('pageEmployees')} description={t('pageEmployeesBody')} actions={<Button variant="gold" onClick={() => setCreating(true)}>{t('pageAddEmployee')}</Button>} />
@@ -33,7 +35,7 @@ export function EmployeesPage() {
           { key: 'name', header: t('fieldName'), render: (row) => <PersonName name={row.fullName} src={row.imageUrl} /> },
           { key: 'username', header: t('username'), className: 'hidden md:table-cell', render: (row) => row.username },
           { key: 'contact', header: t('phone'), className: 'hidden lg:table-cell', render: (row) => row.phone || '—' },
-          { key: 'access', header: t('accessCol'), render: (row) => (row.canSubmitActivities ? t('accessWithActivities') : t('accessStockSales')) },
+          { key: 'access', header: t('roleCol'), render: (row) => t(roleLabelKey(row)) },
           { key: 'status', header: t('labelStatus'), render: (row) => (row.isActive ? t('fieldActive') : t('inactive')) },
           {
             key: 'actions',
@@ -165,14 +167,18 @@ function AccessButtons({ profile }: { profile: Profile }) {
 function CreateEmployeeDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (password: string) => void }) {
   const { t } = useI18n()
   const { addEmployee } = useApp()
+  const [assignedRole, setAssignedRole] = useState<AssignedRole>('employee')
+  const [canSubmitActivities, setCanSubmitActivities] = useState(false)
+  const [canViewStock, setCanViewStock] = useState(true)
+  const [canViewSuppliers, setCanViewSuppliers] = useState(false)
   const form = useForm<EmployeeValues>({
     resolver: zodResolver(employeeSchema),
-    defaultValues: { fullName: '', username: '', email: '', phone: '', password: '', canSubmitActivities: false, canViewStock: true },
+    defaultValues: { fullName: '', username: '', email: '', phone: '', password: '', assignedRole: 'employee', canSubmitActivities: false, canViewStock: true, canViewSuppliers: false },
   })
   return (
     <Modal open title={t('pageAddEmployee')} onClose={onClose}>
       <form className="space-y-4" onSubmit={form.handleSubmit(async (values) => {
-        const result = await addEmployee(values)
+        const result = await addEmployee({ ...values, assignedRole, canSubmitActivities, canViewStock, canViewSuppliers })
         if (result.ok) onCreated(result.meta?.temporaryPassword ?? values.password)
       })}>
         <Field label={t('fullName')} error={form.formState.errors.fullName?.message}><TextInput {...form.register('fullName')} /></Field>
@@ -180,8 +186,16 @@ function CreateEmployeeDialog({ onClose, onCreated }: { onClose: () => void; onC
         <Field label={t('authEmailAddress')} error={form.formState.errors.email?.message}><TextInput type="email" {...form.register('email')} /></Field>
         <Field label={t('phone')} error={form.formState.errors.phone?.message}><TextInput {...form.register('phone')} /></Field>
         <Field label={t('tempPassword')} error={form.formState.errors.password?.message}><TextInput type="text" {...form.register('password')} /></Field>
-        <Checkbox label={t('canSubmitActivities')} {...form.register('canSubmitActivities')} />
-        <input type="hidden" value="true" {...form.register('canViewStock', { setValueAs: () => true })} />
+        <StaffAccessFields
+          assignedRole={assignedRole}
+          onRole={setAssignedRole}
+          canSubmitActivities={canSubmitActivities}
+          onSubmitActivities={setCanSubmitActivities}
+          canViewStock={canViewStock}
+          onViewStock={setCanViewStock}
+          canViewSuppliers={canViewSuppliers}
+          onViewSuppliers={setCanViewSuppliers}
+        />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>{t('cancel')}</Button>
           <Button type="submit" variant="gold" loading={form.formState.isSubmitting}>{t('createAccount')}</Button>
@@ -194,6 +208,10 @@ function CreateEmployeeDialog({ onClose, onCreated }: { onClose: () => void; onC
 function EditEmployeeDialog({ employee, onClose, onPassword }: { employee: Profile; onClose: () => void; onPassword: (password: string) => void }) {
   const { t } = useI18n()
   const { editEmployee } = useApp()
+  const [assignedRole, setAssignedRole] = useState<AssignedRole>(assignedRoleOf(employee))
+  const [canSubmitActivities, setCanSubmitActivities] = useState(employee.canSubmitActivities)
+  const [canViewStock, setCanViewStock] = useState(employee.canViewStock)
+  const [canViewSuppliers, setCanViewSuppliers] = useState(employee.canViewSuppliers)
   const form = useForm<EmployeeEditValues>({
     resolver: zodResolver(employeeEditSchema),
     defaultValues: { fullName: employee.fullName, username: employee.username, phone: employee.phone, password: '' },
@@ -206,6 +224,10 @@ function EditEmployeeDialog({ employee, onClose, onPassword }: { employee: Profi
           username: values.username,
           phone: values.phone,
           password: values.password || undefined,
+          assignedRole,
+          canSubmitActivities,
+          canViewStock,
+          canViewSuppliers,
         })
         if (!result.ok) return
         if (values.password) onPassword(values.password)
@@ -217,6 +239,16 @@ function EditEmployeeDialog({ employee, onClose, onPassword }: { employee: Profi
         <Field label={t('passwordNew')} hint={t('staffPasswordHint')} error={form.formState.errors.password?.message}>
           <TextInput type="text" autoComplete="new-password" {...form.register('password')} />
         </Field>
+        <StaffAccessFields
+          assignedRole={assignedRole}
+          onRole={setAssignedRole}
+          canSubmitActivities={canSubmitActivities}
+          onSubmitActivities={setCanSubmitActivities}
+          canViewStock={canViewStock}
+          onViewStock={setCanViewStock}
+          canViewSuppliers={canViewSuppliers}
+          onViewSuppliers={setCanViewSuppliers}
+        />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>{t('cancel')}</Button>
           <Button type="submit" variant="gold" loading={form.formState.isSubmitting}>{t('save')}</Button>

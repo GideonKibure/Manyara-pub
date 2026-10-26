@@ -1,46 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Package, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ProductPicker, ProductThumb } from '@/components/ProductPicker'
+import { PersonPhoto, ProductPicker, ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
+import { MonthCalendar } from '@/components/ui/MonthCalendar'
 import { Field, NumberInput, SelectInput, TextArea, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel } from '@/components/ui/Feedback'
 import { Modal } from '@/components/ui/Modal'
 import { StockInPdfButton } from '@/features/stockIn/StockInPdfButton'
 import { StockInRecordCard } from '@/features/stockIn/StockInRecordCard'
-import { stockInMatchesQuery, stockInProductNames } from '@/features/stockIn/stockInSearch'
+import { stockInMatchesQuery } from '@/features/stockIn/stockInSearch'
 import { StockInDetail } from '@/features/transactions/Details'
 import { sizeCost } from '@/features/products/offer'
 import { useApp } from '@/context/AppContext'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { MessageKey } from '@/i18n/messages'
 import type { SaleSize, StockInTransaction } from '@/types'
-import { cn } from '@/utils/cn'
+import { canViewSupplierContacts } from '@/utils/access'
 import { dateKey, employeeMinDateKey, formatDate, isEmployeeAllowedDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { nextInvoiceRef } from '@/utils/invoice'
 import { stockInTotal, stockInUnits } from '@/utils/labels'
 import { roundBuyingPrice } from '@/utils/money'
-
-function monthCells(year: number, month: number) {
-  const first = new Date(year, month, 1)
-  const pad = (first.getDay() + 6) % 7
-  const days = new Date(year, month + 1, 0).getDate()
-  const cells: Array<{ key: string; day: number } | null> = []
-  for (let index = 0; index < pad; index += 1) cells.push(null)
-  for (let day = 1; day <= days; day += 1) {
-    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    cells.push({ key, day })
-  }
-  while (cells.length % 7) cells.push(null)
-  return cells
-}
-
-function monthWord(key: string) {
-  const [year, month] = key.split('-').map(Number)
-  return new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(new Date(year, month - 1, 1)).toUpperCase()
-}
 
 interface Line {
   id: string
@@ -115,6 +97,8 @@ export function StockInPage() {
   const receiveUnit = app.units.find((unit) => unit.id === selected?.receiveUnitId)
   const stockUnit = app.units.find((unit) => unit.id === selected?.stockUnitId)
   const suppliers = app.suppliers.filter((supplier) => supplier.isActive)
+  const seeSupplierContacts = canViewSupplierContacts(app.user)
+  const chosenSupplier = suppliers.find((supplier) => supplier.name === supplierName)
   const supplierReady = supplierName.trim().length >= 2
   const employeeSubmit = app.user?.role !== 'admin'
   const lookback = app.settings.recordLookbackDays
@@ -135,11 +119,6 @@ export function StockInPage() {
       .filter((item) => item.submittedBy === app.user?.id && stockInMatchesQuery(item, app.products, deliveryQuery))
       .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
   }, [app.products, app.stockIns, app.user?.id, app.user?.role, deliveryQuery])
-  const calendarYear = calendarCursor.getFullYear()
-  const calendarMonth = calendarCursor.getMonth()
-  const calendarTitle = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }).format(new Date(calendarYear, calendarMonth, 1))
-  const calendarCells = useMemo(() => monthCells(calendarYear, calendarMonth), [calendarMonth, calendarYear])
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const deliveriesByDay = useMemo(() => {
     const map = new Map<string, StockInTransaction[]>()
     for (const item of myDeliveries) {
@@ -186,18 +165,20 @@ export function StockInPage() {
 
   function addLine() {
     if (!supplierReady) return
-    if (!selected || quantity == null || cost == null || !Number.isFinite(quantity) || quantity <= 0 || quantity > 100_000 || !Number.isFinite(cost) || cost < 0 || cost > 100_000_000) {
+    const nextSize: SaleSize = chosenSize?.name ?? 'one'
+    const catalogCost = selected ? roundBuyingPrice(sizeCost(selected, nextSize)) : null
+    const lineCost = employeeSubmit ? catalogCost : cost
+    if (!selected || quantity == null || lineCost == null || !Number.isFinite(quantity) || quantity <= 0 || quantity > 100_000 || !Number.isFinite(lineCost) || lineCost < 0 || lineCost > 100_000_000) {
       setAddHint(t('stockNeed'))
       return
     }
     setAddHint('')
-    const nextSize: SaleSize = chosenSize?.name ?? 'one'
     const next: Line = {
       id: editingLineId ?? uid(),
       productId: selected.id,
       sizeName: nextSize,
       receivedQuantity: quantity,
-      costPerStockUnit: roundBuyingPrice(cost),
+      costPerStockUnit: roundBuyingPrice(lineCost),
     }
     setLines((current) => {
       if (editingLineId && current.some((line) => line.id === editingLineId)) {
@@ -322,6 +303,16 @@ export function StockInPage() {
               <option value="__new__">{t('stockNewSupplier')}</option>
             </SelectInput>
           </Field>
+          {seeSupplierContacts && chosenSupplier && (
+            <div className="flex items-center gap-3 rounded-2xl bg-white/80 px-3 py-2.5 ring-1 ring-white/80">
+              <PersonPhoto src={chosenSupplier.imageUrl} name={chosenSupplier.name} className="h-14 w-14" />
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800">{t('stockSupplierContact')}</p>
+                <p className="truncate font-medium text-ink">{chosenSupplier.name}</p>
+                <p className="text-sm text-stone-500">{chosenSupplier.phone || '—'}</p>
+              </div>
+            </div>
+          )}
           {(newSupplier || (supplierName !== '' && !suppliers.some((supplier) => supplier.name === supplierName))) && (
             <Field label={t('stockNewSupplier')}>
               <TextInput value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder={t('stockSupplierPlaceholder')} />
@@ -380,10 +371,11 @@ export function StockInPage() {
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label={`${t('stockQuantity')} (${receiveUnit?.name ?? 'unit'})`}><NumberInput allowDecimal decimalPlaces={2} value={quantity} onValueChange={setQuantity} /></Field>
-            <Field label={`${t('stockCost')} ${stockUnit?.abbreviation ?? 'unit'}`} hint={t('stockCostHint')}>
+            <Field label={`${t('stockCost')} ${stockUnit?.abbreviation ?? 'unit'}`} hint={employeeSubmit ? t('stockCostLocked') : t('stockCostHint')}>
               <NumberInput
-                value={cost}
+                value={employeeSubmit ? defaultCost : cost}
                 onValueChange={setCost}
+                disabled={employeeSubmit}
                 placeholder={defaultCost != null ? String(defaultCost) : undefined}
               />
             </Field>
@@ -436,90 +428,49 @@ export function StockInPage() {
         </Panel>
       </div>
       {app.user?.role !== 'admin' && (
-        <Panel className="mt-4 space-y-3">
-          <div>
-            <h2 className="font-semibold">{t('stockMyDeliveries')}</h2>
-            <p className="text-sm text-stone-500">{t('stockMyDeliveriesBody')}</p>
-          </div>
-          <TextInput value={deliveryQuery} onChange={(event) => setDeliveryQuery(event.target.value)} placeholder={t('searchDeliveries')} aria-label={t('searchDeliveries')} />
-          <div className="flex items-center justify-between gap-3">
-            <Button variant="secondary" size="sm" aria-label={t('tablePrev')} onClick={() => setCalendarCursor(new Date(calendarYear, calendarMonth - 1, 1))}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <h3 className="font-display text-lg text-ink sm:text-xl">{calendarTitle}</h3>
-            <Button variant="secondary" size="sm" aria-label={t('tableNext')} onClick={() => setCalendarCursor(new Date(calendarYear, calendarMonth + 1, 1))}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-wide text-stone-500 sm:text-[11px]">
-            {weekdays.map((label) => (
-              <span key={label}>{label}</span>
-            ))}
-          </div>
-          <div className="stock-cal">
-            {calendarCells.map((cell, index) => {
-              if (!cell) return <div key={`empty-${index}`} />
-              const deliveries = deliveriesByDay.get(cell.key) ?? []
-              const ready = deliveries.length > 0
-              const pending = deliveries.some((item) => item.status === 'pending')
-              const approved = deliveries.some((item) => item.status === 'approved')
-              const names = [...new Set(deliveries.flatMap((item) => stockInProductNames(item, app.products)))].slice(0, 1)
-              const future = cell.key > today
-              return (
-                <button
-                  key={cell.key}
-                  type="button"
-                  disabled={future}
-                  onClick={() => setSelectedDay(cell.key)}
-                  className={cn(
-                    'stock-cal-day',
-                    future && 'cursor-not-allowed opacity-40',
-                    ready ? 'glass-panel has-stock' : 'border border-dashed border-white/50 bg-white/20 text-stone-400',
-                    selectedDay === cell.key && 'ring-2 ring-amber-600',
-                    cell.key === today && !ready && 'ring-1 ring-amber-300',
-                    approved && !pending && 'bg-emerald-50/70',
-                    pending && 'bg-amber-50/80',
-                  )}
-                >
-                  <span className={cn('font-display text-lg leading-none sm:text-2xl', ready ? 'text-ink' : 'text-stone-400')}>{cell.day}</span>
-                  <span className={cn('mt-0.5 text-[9px] font-bold tracking-[0.16em] sm:text-[10px]', ready ? 'text-amber-800' : 'text-stone-400')}>{monthWord(cell.key)}</span>
-                  {ready && (
-                    <>
-                      <span className="mt-0.5 hidden w-full truncate px-0.5 text-[9px] font-medium text-ink sm:block">{names.join(', ')}</span>
-                      <span className="mt-0.5 rounded-full bg-stone-900/80 px-1.5 py-px text-[9px] font-semibold tabular-nums text-white">{deliveries.length}</span>
-                    </>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-          {!myDeliveries.length && <p className="text-sm text-stone-500">{t('emptyDeliveries')}</p>}
-        </Panel>
+        <div className="mt-4">
+          <MonthCalendar
+            icon={<Package className="h-3.5 w-3.5" />}
+            eyebrow={t('pageStockReceived')}
+            heading={t('stockMyDeliveries')}
+            body={t('stockMyDeliveriesBody')}
+            toolbar={
+              <TextInput value={deliveryQuery} onChange={(event) => setDeliveryQuery(event.target.value)} placeholder={t('searchDeliveries')} aria-label={t('searchDeliveries')} />
+            }
+            empty={!myDeliveries.length ? t('emptyDeliveries') : undefined}
+            cursor={calendarCursor}
+            onCursorChange={setCalendarCursor}
+            selected={selectedDay}
+            onSelect={setSelectedDay}
+            markFor={(day) => {
+              const deliveries = deliveriesByDay.get(day) ?? []
+              if (!deliveries.length) return undefined
+              return deliveries.some((item) => item.status === 'pending') ? 'gold' : 'green'
+            }}
+            countFor={(day) => (deliveriesByDay.get(day) ?? []).length}
+          />
+        </div>
       )}
       {selectedDay && createPortal(
-        <div className="stock-day-pop">
-          <button type="button" className="stock-day-pop-scrim" aria-label={t('closeDialog')} onClick={() => setSelectedDay(null)} />
-          <div role="dialog" aria-modal="true" className="stock-day-pop-sheet">
-            <header className="stock-day-pop-head">
+        <div className="sales-day-pop pop-center">
+          <button type="button" className="sales-day-pop-scrim" aria-label={t('closeDialog')} onClick={() => setSelectedDay(null)} />
+          <div role="dialog" aria-modal="true" className="sales-day-pop-sheet">
+            <header className="sales-day-pop-head">
               <div className="min-w-0">
-                <h2 className="font-display text-lg leading-snug text-ink">{t('stockDayTitle')}</h2>
-                <p className="mt-0.5 text-sm text-stone-500">{formatDate(selectedDay)} · {selectedDayRows.length}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200">{t('stockDayTitle')}</p>
+                <h2 className="mt-0.5 font-display text-xl leading-tight text-white">{formatDate(selectedDay)}</h2>
+                <p className="mt-1 text-sm text-amber-100/80">{selectedDayRows.length}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {selectedDayRows.length > 0 && (
                   <StockInPdfButton className="hidden sm:inline-flex" variant="gold" day={selectedDay} records={selectedDayRows} />
                 )}
-                <button
-                  type="button"
-                  className="grid h-10 w-10 place-items-center rounded-full border border-[#e6e0d6] bg-white text-stone-600 shadow-sm"
-                  onClick={() => setSelectedDay(null)}
-                  aria-label={t('close')}
-                >
+                <button type="button" className="sales-day-pop-close" onClick={() => setSelectedDay(null)} aria-label={t('close')}>
                   <X className="h-5 w-5" />
                 </button>
               </div>
             </header>
-            <div className="stock-day-pop-body hide-scrollbar space-y-3">
+            <div className="sales-day-pop-body hide-scrollbar space-y-3">
               {selectedDayRows.length > 0 && (
                 <StockInPdfButton className="w-full sm:hidden" variant="gold" day={selectedDay} records={selectedDayRows} />
               )}

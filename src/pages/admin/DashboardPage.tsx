@@ -32,14 +32,14 @@ export function DashboardPage() {
       <PageHeader title={t('navDashboard')} description={`${settings.businessName} ${t('dashAdminDescription')}`} />
 
       <section>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">{t('dashToday')}</h2>
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">{t('dashYesterday')}</h2>
         <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4">
-          <StatCard label={t('dashSalesMine')} value={money(dashboard.todaySalesRevenue)} tone="good" />
-          <StatCard label={t('dashPool')} value={money(dashboard.todayPool)} />
-          <StatCard label={t('dashKorokoro')} value={money(dashboard.todayKorokoro)} />
-          <StatCard label={t('dashReceived')} value={String(dashboard.todayStockReceivedUnits)} hint={money(dashboard.todayStockReceivedCost)} />
+          <StatCard label={t('dashSalesYesterday')} value={money(dashboard.todaySalesRevenue)} tone="good" />
+          <StatCard label={t('dashPoolYesterday')} value={money(dashboard.todayPool)} />
+          <StatCard label={t('dashKorokoroYesterday')} value={money(dashboard.todayKorokoro)} />
+          <StatCard label={t('dashReceivedYesterday')} value={String(dashboard.todayStockReceivedUnits)} hint={money(dashboard.todayStockReceivedCost)} />
         </div>
-        <p className="mt-2 text-sm text-stone-600">{t('dashCombined')}: <span className="font-semibold text-ink">{money(dashboard.todayTotalRevenue)}</span></p>
+        <p className="mt-2 text-sm text-stone-600">{t('dashCombinedYesterday')}: <span className="font-semibold text-ink">{money(dashboard.todayTotalRevenue)}</span></p>
         <Link to="/admin/remaining" className="mt-3 block rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 hover:bg-amber-100">
           {t('remainToday')}
         </Link>

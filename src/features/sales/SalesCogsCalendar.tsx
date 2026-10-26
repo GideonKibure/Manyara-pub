@@ -1,28 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, Download, Sparkles, X } from 'lucide-react'
+import { Download, Sparkles, X } from 'lucide-react'
 import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
+import { MonthCalendar } from '@/components/ui/MonthCalendar'
 import { useApp } from '@/context/AppContext'
 import { cogsPdfLabels, downloadCogsDayPdf } from '@/features/reports/dayPdfs'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { DayClose } from '@/types'
 import { cn } from '@/utils/cn'
-import { dateKey, formatDate } from '@/utils/dates'
-
-function monthCells(year: number, month: number) {
-  const first = new Date(year, month, 1)
-  const pad = (first.getDay() + 6) % 7
-  const days = new Date(year, month + 1, 0).getDate()
-  const cells: Array<{ key: string; day: number } | null> = []
-  for (let index = 0; index < pad; index += 1) cells.push(null)
-  for (let day = 1; day <= days; day += 1) {
-    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    cells.push({ key, day })
-  }
-  while (cells.length % 7) cells.push(null)
-  return cells
-}
+import { formatDate } from '@/utils/dates'
 
 function soldLines(close?: DayClose) {
   return (close?.lines ?? []).filter((line) => line.sold > 0).sort((a, b) => b.sold - a.sold || b.amount - a.amount)
@@ -33,12 +20,6 @@ export function SalesCogsCalendar() {
   const { t } = useI18n()
   const [cursor, setCursor] = useState(() => new Date())
   const [selected, setSelected] = useState<string | null>(null)
-  const year = cursor.getFullYear()
-  const month = cursor.getMonth()
-  const today = dateKey()
-  const title = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }).format(new Date(year, month, 1))
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-  const cells = useMemo(() => monthCells(year, month), [month, year])
   const closesByDay = useMemo(() => {
     const map = new Map<string, DayClose[]>()
     const mineOnly = app.user?.role !== 'admin'
@@ -64,70 +45,20 @@ export function SalesCogsCalendar() {
   }, [selected])
 
   return (
-    <section className="sales-cal-wrap">
-      <div className="sales-cal-glow" aria-hidden="true" />
-      <div className="relative flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800">
-            <Sparkles className="h-3.5 w-3.5" />
-            {t('salesCogsTitle')}
-          </p>
-          <h2 className="mt-1 font-display text-xl leading-tight text-ink sm:text-2xl">{t('salesCogsHeading')}</h2>
-          <p className="mt-1 text-sm text-stone-500">{t('salesCogsBody')}</p>
-        </div>
-      </div>
-
-      <div className="relative mt-4 flex items-center justify-between gap-3">
-        <Button variant="secondary" size="sm" aria-label={t('tablePrev')} onClick={() => setCursor(new Date(year, month - 1, 1))}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <h3 className="font-display text-lg text-ink sm:text-xl">{title}</h3>
-        <Button variant="secondary" size="sm" aria-label={t('tableNext')} onClick={() => setCursor(new Date(year, month + 1, 1))}>
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-
-      <div className="relative mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-wide text-amber-900/70 sm:text-[11px]">
-        {weekdays.map((label) => (
-          <span key={label}>{label}</span>
-        ))}
-      </div>
-      <div className="sales-cal relative mt-1.5">
-        {cells.map((cell, index) => {
-          if (!cell) return <div key={`empty-${index}`} />
-          const lines = (closesByDay.get(cell.key) ?? []).flatMap((close) => soldLines(close))
-          const ready = lines.length > 0
-          const future = cell.key > today
-          const isToday = cell.key === today
-          return (
-            <button
-              key={cell.key}
-              type="button"
-              disabled={future}
-              onClick={() => setSelected(cell.key)}
-              className={cn(
-                'sales-cal-day',
-                ready && 'has-sales',
-                isToday && 'is-today',
-                selected === cell.key && 'is-open',
-                future && 'is-future',
-              )}
-              style={{ animationDelay: `${Math.min(index, 20) * 18}ms` }}
-            >
-              <span className="sales-cal-num">{cell.day}</span>
-              {ready ? (
-                <>
-                  <span className="sales-cal-dot" />
-                  <span className="sales-cal-count">{lines.length}</span>
-                </>
-              ) : (
-                <span className="sales-cal-idle" />
-              )}
-            </button>
-          )
-        })}
-      </div>
-      {!closesByDay.size && <p className="relative mt-3 text-center text-sm text-stone-500">{t('salesCogsNone')}</p>}
+    <>
+    <MonthCalendar
+      icon={<Sparkles className="h-3.5 w-3.5" />}
+      eyebrow={t('salesCogsTitle')}
+      heading={t('salesCogsHeading')}
+      body={t('salesCogsBody')}
+      empty={!closesByDay.size ? t('salesCogsNone') : undefined}
+      cursor={cursor}
+      onCursorChange={setCursor}
+      selected={selected}
+      onSelect={setSelected}
+      markFor={(day) => ((closesByDay.get(day) ?? []).flatMap((close) => soldLines(close)).length ? 'gold' : undefined)}
+      countFor={(day) => (closesByDay.get(day) ?? []).flatMap((close) => soldLines(close)).length}
+    />
 
       {selected &&
         createPortal(
@@ -206,6 +137,6 @@ export function SalesCogsCalendar() {
           </div>,
           document.body,
         )}
-    </section>
+    </>
   )
 }

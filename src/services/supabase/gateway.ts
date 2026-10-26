@@ -11,6 +11,7 @@ import {
   unitSchema,
 } from '@/schemas'
 import { ensureProduct } from '@/features/products/offer'
+import { applyCurrentPrices } from '@/features/products/priceHistory'
 import { roundBuyingPrice } from '@/utils/money'
 import { clearSupabaseAuthStorage, supabase, supabaseAnonKey, supabaseUrl } from '@/lib/supabase'
 import {
@@ -30,6 +31,7 @@ import {
   removeSupplier,
   clearBusinessData as clearBusinessDataRpc,
   adminUpdateEmployee,
+  adminSetStaffAccess,
   adminDeleteEmployee,
   adminDeleteRecord,
   saveDayClose as saveDayCloseRpc,
@@ -86,7 +88,8 @@ import type {
   StockInDraft,
   StockInTransaction,
 } from '@/types'
-import { normalizeRecordLookback } from '@/utils/dates'
+import { accessFromAssigned, assignedRoleOf, canViewSupplierContacts } from '@/utils/access'
+import { dateKey, normalizeRecordLookback } from '@/utils/dates'
 
 type Row = Record<string, unknown>
 
@@ -268,9 +271,11 @@ function mapProfile(row: Row): Profile {
     email: str(row, 'email'),
     phone: str(row, 'phone'),
     role: str(row, 'role') === 'admin' ? 'admin' : 'employee',
+    staffTitle: str(row, 'staff_title') === 'manager' ? 'manager' : 'staff',
     isActive: bool(row, 'is_active'),
     canSubmitActivities: bool(row, 'can_submit_activities'),
-    canViewStock: bool(row, 'can_view_stock'),
+    canViewStock: row.can_view_stock !== false,
+    canViewSuppliers: bool(row, 'can_view_suppliers') || str(row, 'role') === 'admin' || str(row, 'staff_title') === 'manager',
     createdAt: str(row, 'created_at'),
     updatedAt: str(row, 'updated_at'),
     lastLoginAt: optional(row, 'last_login_at'),
@@ -410,9 +415,11 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
       email: '',
       phone: '',
       role: 'employee',
+      staffTitle: 'staff',
       isActive: true,
       canSubmitActivities: false,
       canViewStock: true,
+      canViewSuppliers: false,
       createdAt: '',
       updatedAt: '',
     })
@@ -480,6 +487,16 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
       })),
   }))
 
+  const sessionUser = (await dbClient.auth.getUser()).data.user
+  const viewer = mappedProfiles.find((profile) => profile.id === sessionUser?.id)
+  const mappedSuppliers = rowsOf(suppliers.data).map((row) => ({
+    id: str(row, 'id'),
+    name: str(row, 'name'),
+    phone: canViewSupplierContacts(viewer) ? str(row, 'phone') : '',
+    imageUrl: canViewSupplierContacts(viewer) ? optional(row, 'image_url') : undefined,
+    isActive: bool(row, 'is_active'),
+    createdAt: str(row, 'created_at'),
+  }))
   const settingsRow = (settings.data ?? null) as Row | null
   const levels = await dbClient.rpc('current_stock')
   const availability = !levels.error && Array.isArray(levels.data)
@@ -519,13 +536,7 @@ export async function loadWorkspace(): Promise<{ ok: true; db: Database } | { ok
               createdAt: str(row, 'created_at'),
             }),
           ),
-      suppliers: rowsOf(suppliers.data).map((row) => ({
-        id: str(row, 'id'),
-        name: str(row, 'name'),
-        phone: str(row, 'phone'),
-        isActive: bool(row, 'is_active'),
-        createdAt: str(row, 'created_at'),
-      })),
+      suppliers: mappedSuppliers,
       stockIns: stockTransactions.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
       restockOrders: missingRelation(restockOrders.error)
         ? []
@@ -781,13 +792,29 @@ export async function saveUnitRemote(input: { name: string; abbreviation: string
   return { ok: true, message: 'Unit added.' }
 }
 
-export async function saveSupplierRemote(input: { name: string; phone: string }): Promise<ActionResult> {
+export async function saveSupplierRemote(input: { name: string; phone: string; imageUrl?: string }): Promise<ActionResult> {
   const parsed = supplierSchema.safeParse(input)
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? 'Check the supplier.')
-  const result = await client().from('suppliers').insert({ name: parsed.data.name, phone: parsed.data.phone }).select('id').single()
+  const result = await client()
+    .from('suppliers')
+    .insert({ name: parsed.data.name, phone: parsed.data.phone, image_url: input.imageUrl?.trim() || null })
+    .select('id')
+    .single()
   if (result.error) return fail(errorText(result.error))
   await audit('supplier.create', 'supplier', String((result.data as Row).id), `Added supplier ${parsed.data.name}.`)
   return { ok: true, message: 'Supplier added.' }
+}
+
+export async function updateSupplierRemote(id: string, patch: { name?: string; phone?: string; imageUrl?: string }): Promise<ActionResult> {
+  const payload: Record<string, string | null> = {}
+  if (patch.name !== undefined) payload.name = patch.name.trim()
+  if (patch.phone !== undefined) payload.phone = patch.phone
+  if (patch.imageUrl !== undefined) payload.image_url = patch.imageUrl.trim() || null
+  if (typeof payload.name === 'string' && payload.name.length < 2) return fail('Enter the supplier name.')
+  const { error } = await client().from('suppliers').update(payload).eq('id', id)
+  if (error) return fail(errorText(error))
+  await audit('supplier.update', 'supplier', id, 'Updated supplier details.')
+  return { ok: true, message: 'Supplier updated.' }
 }
 
 export async function removeSupplierRemote(id: string): Promise<ActionResult> {
@@ -838,7 +865,7 @@ function productPayload(input: ProductDraft) {
     receive_unit_id: input.receiveUnitId,
     conversion_factor: input.conversionFactor,
     cost_price: roundBuyingPrice(input.costPrice),
-    selling_price: input.sellingPrice,
+    selling_price: Math.round(input.sellingPrice),
     size_mode: input.sizeMode,
     sizes: input.sizes.map((size) => ({ ...size, cost: roundBuyingPrice(size.cost) })),
     cup_price: input.cupPrice,
@@ -848,6 +875,44 @@ function productPayload(input: ProductDraft) {
   }
 }
 
+async function writeCatalogPrices(input: {
+  productId: string
+  costPrice: number
+  sellingPrice: number
+  sizes?: Product['sizes']
+  cupPrice?: number | null
+  halfPrice?: number | null
+}): Promise<ActionResult> {
+  const current = await client().from('products').select('*').eq('id', input.productId).maybeSingle()
+  if (current.error) return fail(errorText(current.error))
+  if (!current.data) return fail('Product not found.')
+  const cost = roundBuyingPrice(input.costPrice)
+  const selling = Math.round(input.sellingPrice)
+  const priced = applyCurrentPrices(mapProduct(current.data as Row), cost, selling, input.sizes)
+  const saved = await client()
+    .from('products')
+    .update({
+      cost_price: priced.costPrice,
+      selling_price: priced.sellingPrice,
+      sizes: priced.sizes,
+      cup_price: input.cupPrice !== undefined ? input.cupPrice : priced.cupPrice,
+      half_price: input.halfPrice !== undefined ? input.halfPrice : priced.halfPrice,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', input.productId)
+    .select('id, cost_price, selling_price')
+    .maybeSingle()
+  if (saved.error) return fail(errorText(saved.error))
+  if (!saved.data) {
+    return fail('The product prices were not saved. Sign in as an administrator and run supabase/migrations/054_fix_product_price_save.sql in the SQL editor.')
+  }
+  const row = saved.data as Row
+  if (num(row, 'cost_price') !== priced.costPrice || num(row, 'selling_price') !== priced.sellingPrice) {
+    return fail('The product prices did not stick. Run supabase/migrations/054_fix_product_price_save.sql in the SQL editor, then save again.')
+  }
+  return { ok: true }
+}
+
 export async function saveProductRemote(id: string | null, input: ProductDraft): Promise<ActionResult> {
   const parsed = productSchema.safeParse(input)
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? 'Check the product.')
@@ -855,12 +920,20 @@ export async function saveProductRemote(id: string | null, input: ProductDraft):
     const current = await client().from('products').select('id').eq('id', id).maybeSingle()
     if (current.error) return fail(errorText(current.error))
     if (!current.data) return fail('Product not found.')
-    const result = await client()
-      .from('products')
-      .update(productPayload({ ...parsed.data, imageUrl: parsed.data.imageUrl ?? '', sku: parsed.data.sku ?? '' }))
-      .eq('id', id)
+    const payload = productPayload({ ...parsed.data, imageUrl: parsed.data.imageUrl ?? '', sku: parsed.data.sku ?? '' })
+    const result = await client().from('products').update(payload).eq('id', id)
     if (result.error) return fail(errorText(result.error))
     await audit('product.update', 'product', id, `Updated product ${parsed.data.name}.`)
+    const priced = await applyPriceChangeRemote({
+      productId: id,
+      day: dateKey(),
+      costPrice: parsed.data.costPrice,
+      sellingPrice: parsed.data.sellingPrice,
+      sizes: parsed.data.sizeMode === 'many' ? parsed.data.sizes : undefined,
+      cupPrice: parsed.data.cupPrice,
+      halfPrice: parsed.data.halfPrice,
+    })
+    if (!priced.ok) return priced
     return { ok: true, message: 'Product updated.' }
   }
   const payload = productPayload({ ...parsed.data, imageUrl: parsed.data.imageUrl ?? '', sku: parsed.data.sku ?? '' })
@@ -934,6 +1007,15 @@ export async function saveEmployeeRemote(input: EmployeeDraft): Promise<ActionRe
     })
     .eq('id', signup.data.user.id)
   if (error) return fail(errorText(error))
+  const access = accessFromAssigned(parsed.data.assignedRole ?? 'employee', parsed.data)
+  const granted = await adminSetStaffAccess(
+    signup.data.user.id,
+    parsed.data.assignedRole ?? 'employee',
+    access.canSubmitActivities,
+    access.canViewStock,
+    access.canViewSuppliers,
+  )
+  if (granted.error && !missingRelation(granted.error)) return fail(errorText(granted.error))
   await audit('employee.create', 'profile', signup.data.user.id, `Created employee account for ${parsed.data.fullName}.`)
   return {
     ok: true,
@@ -944,9 +1026,9 @@ export async function saveEmployeeRemote(input: EmployeeDraft): Promise<ActionRe
 
 export async function updateEmployeeRemote(employeeId: string, patch: EmployeePatch): Promise<ActionResult> {
   if (patch.username !== undefined || patch.password) {
-    const current = await client().from('profiles').select('full_name, phone, username').eq('id', employeeId).eq('role', 'employee').maybeSingle()
+    const current = await client().from('profiles').select('full_name, phone, username').eq('id', employeeId).maybeSingle()
     if (current.error) return fail(errorText(current.error))
-    if (!current.data) return fail('Employee not found.')
+    if (!current.data) return fail('Staff account not found.')
     const row = current.data as Row
     const result = await adminUpdateEmployee(
       employeeId,
@@ -956,20 +1038,36 @@ export async function updateEmployeeRemote(employeeId: string, patch: EmployeePa
       patch.password ?? '',
     )
     if (result.error) return fail(errorText(result.error))
-    return { ok: true, message: 'Employee updated.', meta: patch.password ? { temporaryPassword: patch.password } : undefined }
+  }
+  if (patch.assignedRole || patch.canSubmitActivities !== undefined || patch.canViewStock !== undefined || patch.canViewSuppliers !== undefined) {
+    const current = await client().from('profiles').select('role, staff_title, can_submit_activities, can_view_stock, can_view_suppliers').eq('id', employeeId).maybeSingle()
+    if (current.error) return fail(errorText(current.error))
+    if (!current.data) return fail('Staff account not found.')
+    const row = current.data as Row
+    const assigned = patch.assignedRole ?? assignedRoleOf({
+      role: str(row, 'role') === 'admin' ? 'admin' : 'employee',
+      staffTitle: str(row, 'staff_title') === 'manager' ? 'manager' : 'staff',
+    })
+    const access = accessFromAssigned(assigned, {
+      canSubmitActivities: patch.canSubmitActivities ?? bool(row, 'can_submit_activities'),
+      canViewStock: patch.canViewStock ?? row.can_view_stock !== false,
+      canViewSuppliers: patch.canViewSuppliers ?? bool(row, 'can_view_suppliers'),
+    })
+    const granted = await adminSetStaffAccess(employeeId, assigned, access.canSubmitActivities, access.canViewStock, access.canViewSuppliers)
+    if (granted.error && !missingRelation(granted.error)) return fail(errorText(granted.error))
   }
   const payload: Record<string, string | boolean | null> = {}
   if (patch.fullName !== undefined) payload.full_name = patch.fullName.trim()
   if (patch.phone !== undefined) payload.phone = patch.phone
   if (patch.isActive !== undefined) payload.is_active = patch.isActive
-  if (patch.canSubmitActivities !== undefined) payload.can_submit_activities = patch.canSubmitActivities
-  if (patch.canViewStock !== undefined) payload.can_view_stock = patch.canViewStock
   if (patch.imageUrl !== undefined) payload.avatar_url = patch.imageUrl.trim() || null
   if (typeof payload.full_name === 'string' && payload.full_name.length < 2) return fail('Enter the employee name.')
-  const { error } = await client().from('profiles').update(payload).eq('id', employeeId).eq('role', 'employee')
-  if (error) return fail(errorText(error))
-  await audit('employee.update', 'profile', employeeId, 'Updated employee access.')
-  return { ok: true, message: 'Employee updated.' }
+  if (Object.keys(payload).length) {
+    const { error } = await client().from('profiles').update(payload).eq('id', employeeId)
+    if (error) return fail(errorText(error))
+  }
+  await audit('employee.update', 'profile', employeeId, 'Updated staff access.')
+  return { ok: true, message: 'Staff updated.', meta: patch.password ? { temporaryPassword: patch.password } : undefined }
 }
 
 export async function deleteEmployeeRemote(id: string): Promise<ActionResult> {
@@ -1175,11 +1273,7 @@ export async function saveActivityTypeRemote(
 }
 
 export async function readNotificationRemote(id: string): Promise<ActionResult> {
-  const user = await client().auth.getUser()
-  if (!user.data.user) return fail('You are not signed in.')
-  const { error } = await client().from('notifications').update({ read: true }).eq('id', id).eq('recipient_id', user.data.user.id)
-  if (error) return fail(errorText(error))
-  return { ok: true }
+  return setNotificationsReadRemote([id], true)
 }
 
 export async function readAllNotificationsRemote(): Promise<ActionResult> {
@@ -1188,6 +1282,29 @@ export async function readAllNotificationsRemote(): Promise<ActionResult> {
   const { error } = await client().from('notifications').update({ read: true }).eq('recipient_id', user.data.user.id).eq('read', false)
   if (error) return fail(errorText(error))
   return { ok: true }
+}
+
+export async function setNotificationsReadRemote(ids: string[], read: boolean): Promise<ActionResult> {
+  const user = await client().auth.getUser()
+  if (!user.data.user) return fail('You are not signed in.')
+  if (!ids.length) return { ok: true }
+  const { error } = await client().from('notifications').update({ read }).eq('recipient_id', user.data.user.id).in('id', ids)
+  if (error) return fail(errorText(error))
+  return { ok: true }
+}
+
+export async function deleteNotificationsRemote(ids: string[]): Promise<ActionResult> {
+  const user = await client().auth.getUser()
+  if (!user.data.user) return fail('You are not signed in.')
+  if (!ids.length) return fail('No notifications selected.')
+  const { error } = await client().from('notifications').delete().eq('recipient_id', user.data.user.id).in('id', ids)
+  if (error) {
+    if (/row-level security/i.test(error.message ?? '')) {
+      return fail('Deleting notifications needs the latest SQL. Paste and run supabase/migrations/052_notification_delete.sql in the Supabase SQL editor, then try again.')
+    }
+    return fail(errorText(error))
+  }
+  return { ok: true, message: ids.length === 1 ? 'Notification deleted.' : `${ids.length} notifications deleted.` }
 }
 
 export async function deleteRecordRemote(kind: RecordDeleteKind, id: string): Promise<ActionResult> {
@@ -1267,14 +1384,61 @@ export async function setDayCloseDebtPaymentRemote(
   return { ok: true, message: paidAmount > 0 ? 'Debt payment updated.' : 'Debt marked unpaid.' }
 }
 
+function missingRpc(error: { message?: string } | null) {
+  return Boolean(error && /schema cache|does not exist|Could not find the function/i.test(error.message ?? ''))
+}
+
 export async function applyPriceChangeRemote(input: {
   productId: string
   day: string
   costPrice: number
   sellingPrice: number
+  sizes?: Product['sizes']
+  cupPrice?: number | null
+  halfPrice?: number | null
 }): Promise<ActionResult> {
-  const result = await adminApplyPriceChange(input.productId, input.day, roundBuyingPrice(input.costPrice), Math.round(input.sellingPrice))
-  if (result.error) return fail(errorText(result.error))
-  const updated = typeof result.data === 'number' ? result.data : 0
+  const cost = roundBuyingPrice(input.costPrice)
+  const selling = Math.round(input.sellingPrice)
+  const day = input.day.slice(0, 10)
+  const rpc = await adminApplyPriceChange(input.productId, day, cost, selling)
+  if (rpc.error) {
+    const actor = (await client().auth.getUser()).data.user?.id
+    if (actor) {
+      await client().from('product_price_changes').upsert(
+        {
+          product_id: input.productId,
+          effective_date: day,
+          cost_price: cost,
+          selling_price: selling,
+          created_by: actor,
+        },
+        { onConflict: 'product_id,effective_date' },
+      )
+    }
+  }
+
+  const later = await client()
+    .from('product_price_changes')
+    .select('id')
+    .eq('product_id', input.productId)
+    .gt('effective_date', day)
+    .limit(1)
+  const hasLater = !later.error && Boolean(later.data?.length)
+  if (!hasLater) {
+    const written = await writeCatalogPrices({
+      productId: input.productId,
+      costPrice: cost,
+      sellingPrice: selling,
+      sizes: input.sizes,
+      cupPrice: input.cupPrice,
+      halfPrice: input.halfPrice,
+    })
+    if (!written.ok) return written
+  }
+
+  if (rpc.error) {
+    await audit('product.price_change', 'product', input.productId, `Price change from ${day}.`)
+  }
+  const updated = typeof rpc.data === 'number' ? rpc.data : 0
   return { ok: true, message: `Prices saved. ${updated} COGS sheet${updated === 1 ? '' : 's'} updated.` }
 }

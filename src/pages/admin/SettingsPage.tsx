@@ -1,4 +1,8 @@
 import { useState } from 'react'
+import { PersonName } from '@/components/ProductPicker'
+import { StaffAccessFields } from '@/features/staff/StaffAccessFields'
+import { assignedRoleOf, roleLabelKey, type AssignedRole } from '@/utils/access'
+import type { Profile } from '@/types'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { Button } from '@/components/ui/Button'
@@ -88,6 +92,17 @@ export function SettingsPage() {
         <p className="mt-3 text-sm font-medium text-ink">{t('settingsLookbackOn').replace('{n}', String(lookback))}</p>
       </Panel>
       <Panel>
+        <h2 className="font-semibold">{t('settingsStaffTitle')}</h2>
+        <p className="mt-1 text-sm leading-6 text-stone-600">{t('settingsStaffBody')}</p>
+        <ul className="mt-4 space-y-3">
+          {app.profiles.slice().sort((a, b) => a.fullName.localeCompare(b.fullName)).map((profile) => (
+            <li key={profile.id}>
+              <StaffAccessCard profile={profile} />
+            </li>
+          ))}
+        </ul>
+      </Panel>
+      <Panel>
         <h2 className="font-semibold">{t('settingsUnitsTitle')}</h2>
         <ul className="mt-3 space-y-2">
           {app.units.map((unit) => (
@@ -158,6 +173,51 @@ export function SettingsPage() {
         onClose={() => setResetOpen(false)}
         onConfirm={() => { app.restoreDemo(); setResetOpen(false) }}
       />
+    </div>
+  )
+}
+
+function StaffAccessCard({ profile }: { profile: Profile }) {
+  const app = useApp()
+  const { t } = useI18n()
+  const [assignedRole, setAssignedRole] = useState<AssignedRole>(assignedRoleOf(profile))
+  const [canSubmitActivities, setCanSubmitActivities] = useState(profile.canSubmitActivities)
+  const [canViewStock, setCanViewStock] = useState(profile.canViewStock)
+  const [canViewSuppliers, setCanViewSuppliers] = useState(profile.canViewSuppliers)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  return (
+    <div className="rounded-2xl border border-line bg-stone-50/80 px-3 py-3 sm:px-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <PersonName name={profile.fullName} src={profile.imageUrl} />
+        <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-amber-800">{t(roleLabelKey(profile))}</span>
+      </div>
+      <StaffAccessFields
+        assignedRole={assignedRole}
+        onRole={setAssignedRole}
+        canSubmitActivities={canSubmitActivities}
+        onSubmitActivities={setCanSubmitActivities}
+        canViewStock={canViewStock}
+        onViewStock={setCanViewStock}
+        canViewSuppliers={canViewSuppliers}
+        onViewSuppliers={setCanViewSuppliers}
+      />
+      {error ? <p className="mt-2 text-sm text-rose-700">{error}</p> : null}
+      <Button
+        className="mt-3"
+        size="sm"
+        variant="gold"
+        loading={busy}
+        onClick={async () => {
+          setBusy(true)
+          setError('')
+          const result = await app.editEmployee(profile.id, { assignedRole, canSubmitActivities, canViewStock, canViewSuppliers })
+          setBusy(false)
+          if (!result.ok) setError(result.error)
+        }}
+      >
+        {t('save')}
+      </Button>
     </div>
   )
 }

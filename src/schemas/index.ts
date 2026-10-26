@@ -121,8 +121,10 @@ export const employeeSchema = z.object({
   email: z.string().trim().email('Enter a valid email address'),
   phone: z.string().trim().max(30).optional().or(z.literal('')),
   password: passwordSchema,
+  assignedRole: z.enum(['admin', 'manager', 'employee']).default('employee'),
   canSubmitActivities: z.boolean(),
   canViewStock: z.boolean(),
+  canViewSuppliers: z.boolean().default(false),
 })
 
 export const employeeEditSchema = z

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Package, Pencil, Plus, Save, Search, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ClipboardCheck, Package, Pencil, Plus, Save, Search, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react'
 import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
 import { ChainScroll } from '@/components/ui/ChainScroll'
@@ -38,9 +38,7 @@ function CountProductCard({
   available,
   remaining,
   fallbackRemaining,
-  cost,
   onRemaining,
-  onCost,
   onSkip,
   highlighted,
 }: {
@@ -49,18 +47,15 @@ function CountProductCard({
   available: number
   remaining: number | null
   fallbackRemaining: number
-  cost: number | null
   onRemaining: (value: number | null) => void
-  onCost: (value: number | null) => void
   onSkip?: () => void
   highlighted?: boolean
 }) {
   const app = useApp()
   const { t } = useI18n()
-  const [priceOpen, setPriceOpen] = useState(false)
   const left = remaining == null ? fallbackRemaining : remaining
   const sold = Math.max(0, opening - left)
-  const unitCost = roundBuyingPrice(cost ?? product.costPrice)
+  const unitCost = roundBuyingPrice(product.costPrice)
   const profit = sold * (product.sellingPrice - unitCost)
   const halfOk = Number.isFinite(left) && left >= 0 && Math.abs(left * 2 - Math.round(left * 2)) < 1e-6
   const cap = Math.min(opening, available)
@@ -115,25 +110,19 @@ function CountProductCard({
           <p className="text-[10px] uppercase tracking-wide text-stone-400">{t('remainSold')}</p>
           <p className="text-lg font-semibold tabular-nums">{formatQty(sold)}</p>
         </div>
-        <button type="button" className="flex items-center justify-between rounded-2xl bg-amber-50 px-3 py-2 text-left" onClick={() => setPriceOpen((open) => !open)}>
-          <span>
-            <span className="block text-[10px] uppercase tracking-wide text-amber-800">{t('remainBuyPrice')}</span>
-            <span className="text-sm font-semibold tabular-nums text-ink">{app.money(unitCost)}</span>
-          </span>
-          <ChevronDown className={cn('h-4 w-4 text-amber-800 transition', priceOpen ? 'rotate-180' : '')} />
-        </button>
-      </div>
-      {priceOpen && (
-        <div className="space-y-2 border-t border-white/70 px-3 py-3">
-          <NumberInput value={cost ?? roundBuyingPrice(product.costPrice)} onValueChange={onCost} className="rounded-2xl border-amber-200/80 bg-white text-lg font-semibold" />
-          <p className="text-[11px] text-stone-500">{t('remainBuyHint')}</p>
-          {onSkip ? (
-            <Button type="button" size="sm" variant="danger" onClick={onSkip}>
-              {t('deleteRecord')}
-            </Button>
-          ) : null}
+        <div className="rounded-2xl bg-amber-50 px-3 py-2 text-left">
+          <p className="text-[10px] uppercase tracking-wide text-amber-800">{t('remainBuyPrice')}</p>
+          <p className="text-sm font-semibold tabular-nums text-ink">{app.money(unitCost)}</p>
+          <p className="mt-1 text-[11px] leading-4 text-amber-900/80">{t('remainBuyHint')}</p>
         </div>
-      )}
+      </div>
+      {onSkip ? (
+        <div className="border-t border-white/70 px-3 py-3">
+          <Button type="button" size="sm" variant="danger" onClick={onSkip}>
+            {t('deleteRecord')}
+          </Button>
+        </div>
+      ) : null}
     </article>
   )
 }
@@ -177,7 +166,6 @@ export function RemainingStockPage() {
       .sort((a, b) => a.product.name.localeCompare(b.product.name))
   }, [app.products, app.sales, app.movements, app.user?.id, cogsDay, myClose?.id, myClose?.lines])
   const [remaining, setRemaining] = useState<Record<string, number | null>>({})
-  const [costs, setCosts] = useState<Record<string, number | null>>({})
   const [skipped, setSkipped] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
@@ -201,7 +189,6 @@ export function RemainingStockPage() {
       setMobileItems([])
       setLines([])
       setRemaining({})
-      setCosts({})
       setSkipped([])
       setStep('count')
       return
@@ -217,14 +204,11 @@ export function RemainingStockPage() {
     )
     setLines(myClose.lines ?? [])
     const nextRemain: Record<string, number | null> = {}
-    const nextCosts: Record<string, number | null> = {}
     for (const line of myClose.lines ?? []) {
       if (!line.productId) continue
       nextRemain[line.productId] = line.remaining
-      if (line.unitCost != null) nextCosts[line.productId] = line.unitCost
     }
     setRemaining(nextRemain)
-    setCosts(nextCosts)
     setSkipped([])
     setStep((myClose.lines ?? []).length ? 'sheet' : 'count')
   }, [cogsDay, myClose?.id])
@@ -254,7 +238,7 @@ export function RemainingStockPage() {
     const value = remaining[product.id]
     const left = value == null ? fallbackRemaining : value
     const sold = Math.max(0, opening - left)
-    const unitCost = roundBuyingPrice(costs[product.id] ?? product.costPrice)
+    const unitCost = roundBuyingPrice(product.costPrice)
     const profit = sold * (product.sellingPrice - unitCost)
     const halfOk = Number.isFinite(left) && left >= 0 && Math.abs(left * 2 - Math.round(left * 2)) < 1e-6
     const cap = Math.min(opening, live)
@@ -465,10 +449,8 @@ export function RemainingStockPage() {
                         available={row.live}
                         remaining={remaining[row.product.id] ?? null}
                         fallbackRemaining={row.fallbackRemaining}
-                        cost={costs[row.product.id] ?? null}
                         highlighted={Boolean(needle && productMatches(row.product, needle))}
                         onRemaining={(next) => writeRemaining(row.product.id, next)}
-                        onCost={(next) => setCosts((current) => ({ ...current, [row.product.id]: next }))}
                         onSkip={() => setSkipped((current) => [...current, row.product.id])}
                       />
                     ))}

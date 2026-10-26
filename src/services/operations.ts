@@ -1,7 +1,7 @@
 import { snapshotFor, stockQtyFromReceived } from '@/features/inventory/stock'
 import { overdueUnpaidBill, unpaidBillHeld } from '@/features/sales/holds'
 import { portionPrice, sizeCost } from '@/features/products/offer'
-import { latestPriceChange, nextPriceChangeDate, repriceDayCloses } from '@/features/products/priceHistory'
+import { applyCurrentPrices, latestPriceChange, nextPriceChangeDate, repriceDayCloses } from '@/features/products/priceHistory'
 import { applyDebtPaymentReview, approvePendingDebts, debtPaid, hasPendingDebtPayment, setDebtPayment } from '@/features/dayClose/debts'
 import { syncStockAlerts } from '@/features/notifications/alerts'
 import { saleTotal } from '@/utils/labels'
@@ -33,6 +33,7 @@ import type {
   ExpenseDraft,
   ExpenseTransaction,
   InventoryMovement,
+  Product,
   ProductDraft,
   ProductPriceChange,
   Profile,
@@ -49,6 +50,7 @@ import type {
   StockInItem,
   StockInTransaction,
 } from '@/types'
+import { accessFromAssigned, assignedRoleOf } from '@/utils/access'
 import { asDateKey, dateKey, isEmployeeAllowedDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { allocateInvoiceRef } from '@/utils/invoice'
@@ -286,7 +288,7 @@ export function deleteUnit(db: Database, userId: string, unitId: string): OpResu
   )
 }
 
-export function createSupplier(db: Database, userId: string, input: { name: string; phone: string }): OpResult {
+export function createSupplier(db: Database, userId: string, input: { name: string; phone: string; imageUrl?: string }): OpResult {
   const adminCheck = requireAdmin(db, userId)
   if (!adminCheck.ok) return adminCheck
   const parsed = supplierSchema.safeParse(input)
@@ -294,8 +296,37 @@ export function createSupplier(db: Database, userId: string, input: { name: stri
   if (db.suppliers.some((supplier) => supplier.name.toLowerCase() === parsed.data.name.toLowerCase())) {
     return fail('That supplier already exists.')
   }
-  const supplier = { id: uid(), name: parsed.data.name, phone: parsed.data.phone, isActive: true, createdAt: now() }
+  const supplier = {
+    id: uid(),
+    name: parsed.data.name,
+    phone: parsed.data.phone,
+    imageUrl: input.imageUrl?.trim() || undefined,
+    isActive: true,
+    createdAt: now(),
+  }
   return finish(audit({ ...db, suppliers: [...db.suppliers, supplier] }, userId, 'supplier.create', 'supplier', supplier.id, `Added supplier ${supplier.name}.`), 'Supplier added.')
+}
+
+export function updateSupplier(db: Database, userId: string, id: string, patch: { name?: string; phone?: string; imageUrl?: string }): OpResult {
+  const adminCheck = requireAdmin(db, userId)
+  if (!adminCheck.ok) return adminCheck
+  const current = db.suppliers.find((item) => item.id === id)
+  if (!current) return fail('That supplier could not be found.')
+  const name = patch.name?.trim() ?? current.name
+  if (name.length < 2) return fail('Enter the supplier name.')
+  if (db.suppliers.some((item) => item.id !== id && item.name.toLowerCase() === name.toLowerCase())) {
+    return fail('That supplier already exists.')
+  }
+  const supplier = {
+    ...current,
+    name,
+    phone: patch.phone ?? current.phone,
+    imageUrl: patch.imageUrl === undefined ? current.imageUrl : patch.imageUrl.trim() || undefined,
+  }
+  return finish(
+    audit({ ...db, suppliers: db.suppliers.map((item) => (item.id === id ? supplier : item)) }, userId, 'supplier.update', 'supplier', id, `Updated supplier ${supplier.name}.`),
+    'Supplier updated.',
+  )
 }
 
 export function deleteSupplier(db: Database, userId: string, id: string): OpResult {
@@ -371,9 +402,9 @@ export function updateProduct(db: Database, userId: string, productId: string, i
           receiveUnitId: parsed.data.receiveUnitId,
           conversionFactor: parsed.data.conversionFactor,
           costPrice: roundBuyingPrice(parsed.data.costPrice),
-          sellingPrice: parsed.data.sellingPrice,
+          sellingPrice: Math.round(parsed.data.sellingPrice),
           sizeMode: parsed.data.sizeMode,
-          sizes: parsed.data.sizes.map((size) => ({ ...size, cost: roundBuyingPrice(size.cost) })),
+          sizes: parsed.data.sizes.map((size) => ({ ...size, cost: roundBuyingPrice(size.cost), price: Math.round(size.price) })),
           cupPrice: parsed.data.cupPrice,
           halfPrice: parsed.data.halfPrice,
           minStock: parsed.data.minStock,
@@ -382,13 +413,23 @@ export function updateProduct(db: Database, userId: string, productId: string, i
         }
       : product,
   )
-  return finish(audit({ ...db, products }, userId, 'product.update', 'product', productId, `Updated product ${parsed.data.name}.`), 'Product updated.')
+  const saved = audit({ ...db, products }, userId, 'product.update', 'product', productId, `Updated product ${parsed.data.name}.`)
+  const priced = applyPriceChange(saved, userId, {
+    productId,
+    day: dateKey(),
+    costPrice: parsed.data.costPrice,
+    sellingPrice: parsed.data.sellingPrice,
+    sizes: parsed.data.sizeMode === 'many' ? parsed.data.sizes : undefined,
+    cupPrice: parsed.data.cupPrice,
+    halfPrice: parsed.data.halfPrice,
+  })
+  return priced.ok ? { ok: true, db: priced.db, message: 'Product updated.' } : finish(saved, 'Product updated.')
 }
 
 export function applyPriceChange(
   db: Database,
   userId: string,
-  input: { productId: string; day: string; costPrice: number; sellingPrice: number },
+  input: { productId: string; day: string; costPrice: number; sellingPrice: number; sizes?: Product['sizes']; cupPrice?: number | null; halfPrice?: number | null },
 ): OpResult {
   const adminCheck = requireAdmin(db, userId)
   if (!adminCheck.ok) return adminCheck
@@ -416,11 +457,21 @@ export function applyPriceChange(
   const until = nextPriceChangeDate(priceChanges, product.id, day)
   const repriced = repriceDayCloses(db.dayCloses ?? [], product, day, costPrice, sellingPrice, until)
   const latest = latestPriceChange(priceChanges, product.id)
-  const products = db.products.map((item) =>
-    item.id === product.id && latest
-      ? { ...item, costPrice: latest.costPrice, sellingPrice: latest.sellingPrice, updatedAt: now() }
-      : item,
-  )
+  const products = db.products.map((item) => {
+    if (item.id !== product.id || !latest) return item
+    const priced = applyCurrentPrices(
+      item,
+      latest.costPrice,
+      latest.sellingPrice,
+      latest.effectiveDate === day ? input.sizes : undefined,
+    )
+    return {
+      ...priced,
+      cupPrice: latest.effectiveDate === day && input.cupPrice !== undefined ? input.cupPrice : priced.cupPrice,
+      halfPrice: latest.effectiveDate === day && input.halfPrice !== undefined ? input.halfPrice : priced.halfPrice,
+      updatedAt: now(),
+    }
+  })
   const next = audit(
     { ...db, products, priceChanges, dayCloses: repriced.dayCloses },
     userId,
@@ -503,6 +554,7 @@ export function createEmployee(db: Database, userId: string, input: EmployeeDraf
   if (db.profiles.some((profile) => profile.email.toLowerCase() === email || profile.username.toLowerCase() === username.toLowerCase())) {
     return fail('That email or username is already in use.')
   }
+  const access = accessFromAssigned(parsed.data.assignedRole ?? 'employee', parsed.data)
   const id = uid()
   const profile: Profile = {
     id,
@@ -510,10 +562,12 @@ export function createEmployee(db: Database, userId: string, input: EmployeeDraf
     username,
     email,
     phone: parsed.data.phone ?? '',
-    role: 'employee',
+    role: access.role,
+    staffTitle: access.staffTitle,
     isActive: true,
-    canSubmitActivities: parsed.data.canSubmitActivities,
-    canViewStock: parsed.data.canViewStock,
+    canSubmitActivities: access.canSubmitActivities,
+    canViewStock: access.canViewStock,
+    canViewSuppliers: access.canViewSuppliers,
     createdAt: now(),
     updatedAt: now(),
   }
@@ -530,8 +584,19 @@ export function updateEmployee(db: Database, userId: string, employeeId: string,
   const adminCheck = requireAdmin(db, userId)
   if (!adminCheck.ok) return adminCheck
   const current = db.profiles.find((profile) => profile.id === employeeId)
-  if (!current || current.role !== 'employee') return fail('Employee not found.')
+  if (!current) return fail('Staff account not found.')
   if (patch.isActive === false && employeeId === userId) return fail('You cannot deactivate your own account.')
+  const nextAccess = patch.assignedRole
+    ? accessFromAssigned(patch.assignedRole, {
+        canSubmitActivities: patch.canSubmitActivities ?? current.canSubmitActivities,
+        canViewStock: patch.canViewStock ?? current.canViewStock,
+        canViewSuppliers: patch.canViewSuppliers ?? current.canViewSuppliers,
+      })
+    : null
+  if (nextAccess && nextAccess.role !== 'admin' && current.role === 'admin' && current.isActive) {
+    const otherAdmins = db.profiles.filter((profile) => profile.id !== employeeId && profile.role === 'admin' && profile.isActive).length
+    if (!otherAdmins) return fail('Keep at least one administrator.')
+  }
   const username = patch.username?.trim().toLowerCase()
   if (username) {
     const parsed = employeeSchema.shape.username.safeParse(patch.username)
@@ -550,8 +615,11 @@ export function updateEmployee(db: Database, userId: string, employeeId: string,
     phone: patch.phone ?? current.phone,
     username: username || current.username,
     isActive: patch.isActive ?? current.isActive,
-    canSubmitActivities: patch.canSubmitActivities ?? current.canSubmitActivities,
-    canViewStock: patch.canViewStock ?? current.canViewStock,
+    role: nextAccess?.role ?? current.role,
+    staffTitle: nextAccess?.staffTitle ?? current.staffTitle ?? 'staff',
+    canSubmitActivities: nextAccess?.canSubmitActivities ?? patch.canSubmitActivities ?? current.canSubmitActivities,
+    canViewStock: nextAccess?.canViewStock ?? patch.canViewStock ?? current.canViewStock,
+    canViewSuppliers: nextAccess?.canViewSuppliers ?? patch.canViewSuppliers ?? current.canViewSuppliers ?? false,
     imageUrl: patch.imageUrl === undefined ? current.imageUrl : patch.imageUrl.trim() || undefined,
     updatedAt: now(),
   }
@@ -563,7 +631,7 @@ export function updateEmployee(db: Database, userId: string, employeeId: string,
       accounts: next.accounts.map((account) => (account.profileId === employeeId ? { ...account, password: patch.password as string } : account)),
     }
   }
-  return finish(audit(next, userId, 'employee.update', 'profile', employeeId, `Updated employee ${profile.fullName}.`), 'Employee updated.')
+  return finish(audit(next, userId, 'employee.update', 'profile', employeeId, `Updated ${assignedRoleOf(profile)} access for ${profile.fullName}.`), 'Staff updated.')
 }
 
 function employeeHasRecords(db: Database, employeeId: string) {
@@ -581,7 +649,8 @@ export function deleteEmployee(db: Database, userId: string, employeeId: string)
   if (!adminCheck.ok) return adminCheck
   if (employeeId === userId) return fail('You cannot delete your own account.')
   const current = db.profiles.find((profile) => profile.id === employeeId)
-  if (!current || current.role !== 'employee') return fail('Employee not found.')
+  if (!current) return fail('Staff account not found.')
+  if (current.role === 'admin') return fail('Demote this administrator before deleting the account.')
   if (employeeHasRecords(db, employeeId)) {
     const profile = { ...current, isActive: false, updatedAt: now() }
     return finish(
@@ -718,12 +787,7 @@ function applyStockInApproval(db: Database, record: StockInTransaction, stamped:
     createdBy,
     createdAt: stamped,
   }))
-  const products = db.products.map((product) => {
-    const received = record.items.find((item) => item.productId === product.id)
-    if (!received) return product
-    return { ...product, costPrice: received.costPerStockUnit, updatedAt: stamped }
-  })
-  return { ...db, products, movements: [...db.movements, ...movements] }
+  return { ...db, movements: [...db.movements, ...movements] }
 }
 
 /** Pending deliveries that already have an invoice reference are approved once. */
@@ -2250,12 +2314,6 @@ function receiveRestockItem(db: Database, order: RestockOrder, line: RestockOrde
       movements: [...working.movements, movement],
     }
   }
-  working = {
-    ...working,
-    products: working.products.map((item) =>
-      item.id === product.id ? { ...item, costPrice: priced.costPerStockUnit, updatedAt: stamped } : item,
-    ),
-  }
   const items = order.items.map((item) =>
     item.id === line.id
       ? { ...item, received: true, receivedAt: stamped, receiveUnitId: product.receiveUnitId, conversionFactor, stockQuantity }
@@ -2310,15 +2368,37 @@ export function setRestockOrderStatus(db: Database, userId: string, orderId: str
 }
 
 export function markNotificationRead(db: Database, userId: string, notificationId: string): OpResult {
-  const actor = activeProfile(db, userId)
-  if (!actor.ok) return actor
-  const notifications = db.notifications.map((item) => (item.id === notificationId && item.recipientId === userId ? { ...item, read: true } : item))
-  return { ok: true, db: { ...db, notifications } }
+  return setNotificationsRead(db, userId, [notificationId], true)
 }
 
 export function markAllNotificationsRead(db: Database, userId: string): OpResult {
   const actor = activeProfile(db, userId)
   if (!actor.ok) return actor
-  const notifications = db.notifications.map((item) => (item.recipientId === userId ? { ...item, read: true } : item))
+  return setNotificationsRead(
+    db,
+    userId,
+    db.notifications.filter((item) => item.recipientId === userId).map((item) => item.id),
+    true,
+  )
+}
+
+export function setNotificationsRead(db: Database, userId: string, ids: string[], read: boolean): OpResult {
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
+  if (!ids.length) return { ok: true, db }
+  const chosen = new Set(ids)
+  const notifications = db.notifications.map((item) =>
+    item.recipientId === userId && chosen.has(item.id) ? { ...item, read } : item,
+  )
   return { ok: true, db: { ...db, notifications } }
+}
+
+export function removeNotifications(db: Database, userId: string, ids: string[]): OpResult {
+  const actor = activeProfile(db, userId)
+  if (!actor.ok) return actor
+  if (!ids.length) return { ok: true, db, message: 'No notifications selected.' }
+  const chosen = new Set(ids)
+  const notifications = db.notifications.filter((item) => !(item.recipientId === userId && chosen.has(item.id)))
+  const removed = db.notifications.length - notifications.length
+  return { ok: true, db: { ...db, notifications }, message: removed === 1 ? 'Notification deleted.' : `${removed} notifications deleted.` }
 }

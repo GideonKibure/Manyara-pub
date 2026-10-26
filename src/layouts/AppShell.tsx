@@ -10,6 +10,7 @@ import { ToastViewport } from '@/components/ui/Feedback'
 import { useApp } from '@/context/AppContext'
 import { LanguageSwitch, useI18n } from '@/i18n/LanguageContext'
 import { cn } from '@/utils/cn'
+import { roleLabelKey } from '@/utils/access'
 
 export interface NavItem {
   to: string
@@ -119,18 +120,25 @@ export function AppShell({
     const glass = Boolean(onClose)
     return (
     <div className="flex h-full flex-col">
-      <div className={cn('flex items-center gap-3 px-4 py-5', compact && 'justify-center px-2', glass && 'pt-[max(1.25rem,env(safe-area-inset-top))]')}>
-        <BrandLogo className={cn('shrink-0', compact ? 'h-11 w-11' : 'h-12 w-12')} alt={settings.businessName} />
+      <div className={cn('flex items-center gap-2.5 px-3 py-4', compact && 'flex-col px-2', glass && 'pt-[max(1.25rem,env(safe-area-inset-top))]')}>
+        <BrandLogo framed className={cn('shrink-0', compact ? 'h-14 w-12' : 'h-16 w-14')} alt={settings.businessName} />
         {!compact && (
           <div className={cn('min-w-0 flex-1', onClose && 'pr-1')}>
             <p className={cn('font-display text-lg leading-tight', glass ? 'text-ink' : 'text-white')}>{settings.businessName}</p>
             <p className={cn('mt-1 text-xs uppercase tracking-wider', glass ? 'text-stone-500' : 'text-amber-200/80')}>{t('management')}</p>
           </div>
         )}
-        {onClose && (
+        {onClose ? (
           <span className="shrink-0">
             <MenuToggle open label={t('closeMenu')} onClick={onClose} />
           </span>
+        ) : (
+          <MenuToggle
+            className={cn('shrink-0', compact ? '' : 'ml-auto')}
+            open={!collapsed}
+            label={collapsed ? t('expandSidebar') : t('collapseSidebar')}
+            onClick={toggleCollapsed}
+          />
         )}
       </div>
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4" aria-label={t('navMenu')}>
@@ -153,7 +161,7 @@ export function AppShell({
           {!compact && (
             <div className="min-w-0">
               <p className={cn('text-sm font-semibold leading-5', glass ? 'text-ink' : 'text-white')}>{user?.fullName}</p>
-              <p className={cn('text-xs', glass ? 'text-stone-500' : 'text-stone-300')}>{user?.role === 'admin' ? t('profileRoleAdmin') : t('profileRoleEmployee')}</p>
+              <p className={cn('text-xs', glass ? 'text-stone-500' : 'text-stone-300')}>{user ? t(roleLabelKey(user)) : t('profileRoleEmployee')}</p>
             </div>
           )}
         </Link>
@@ -170,13 +178,6 @@ export function AppShell({
     <div className={cn('app-canvas min-h-screen text-ink', user?.role === 'employee' && 'emp-shell')}>
       <aside className={cn('app-sidebar no-print fixed inset-y-0 left-0 z-30 hidden transition-[width] duration-200 md:block', collapsed ? 'w-20' : 'w-72')}>
         {sidebar(collapsed)}
-        <div className="absolute right-2 top-3 z-40">
-          <MenuToggle
-            open={!collapsed}
-            label={collapsed ? t('expandSidebar') : t('collapseSidebar')}
-            onClick={toggleCollapsed}
-          />
-        </div>
       </aside>
       {mobileOpen && (
         <div className="no-print fixed inset-0 z-40 md:hidden">
@@ -194,7 +195,9 @@ export function AppShell({
         }}
       >
         <header className="app-pagebar no-print sticky top-0 z-20 flex items-center gap-2 px-3 py-2 backdrop-blur-xl sm:px-4">
-          <BrandLogo className="h-10 w-10 shrink-0 md:hidden" alt={settings.businessName} />
+          <span className="shrink-0 md:hidden">
+            <BrandLogo framed className="h-12 w-10" alt={settings.businessName} />
+          </span>
           <div className="app-page-chip">
             {current ? (
               <span className="hidden h-10 w-10 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-amber-500 to-amber-800 text-white shadow-md shadow-amber-900/20 sm:grid">

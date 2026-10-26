@@ -354,9 +354,9 @@ export function buildSeed(): Database {
     accounts: [],
     resetTokens: [],
     profiles: [
-      { id: admin, fullName: 'Neema Lyimo', username: 'neema', email: 'admin@manyarapub.co.tz', phone: '+255700000001', role: 'admin', isActive: true, canSubmitActivities: true, canViewStock: true, createdAt: created, updatedAt: created },
-      { id: amina, fullName: 'Amina Hassan', username: 'amina', email: 'amina@manyarapub.co.tz', phone: '+255700000002', role: 'employee', isActive: true, canSubmitActivities: true, canViewStock: true, createdAt: created, updatedAt: created },
-      { id: joseph, fullName: 'Joseph Mwangi', username: 'joseph', email: 'joseph@manyarapub.co.tz', phone: '+255700000003', role: 'employee', isActive: true, canSubmitActivities: false, canViewStock: true, createdAt: created, updatedAt: created },
+      { id: admin, fullName: 'Neema Lyimo', username: 'neema', email: 'admin@manyarapub.co.tz', phone: '+255700000001', role: 'admin', staffTitle: 'staff', isActive: true, canSubmitActivities: true, canViewStock: true, canViewSuppliers: true, createdAt: created, updatedAt: created },
+      { id: amina, fullName: 'Amina Hassan', username: 'amina', email: 'amina@manyarapub.co.tz', phone: '+255700000002', role: 'employee', staffTitle: 'staff', isActive: true, canSubmitActivities: true, canViewStock: true, canViewSuppliers: false, createdAt: created, updatedAt: created },
+      { id: joseph, fullName: 'Joseph Mwangi', username: 'joseph', email: 'joseph@manyarapub.co.tz', phone: '+255700000003', role: 'employee', staffTitle: 'staff', isActive: true, canSubmitActivities: false, canViewStock: true, canViewSuppliers: false, createdAt: created, updatedAt: created },
     ],
     categories: [
       [beer, 'Beers', 'Bottled and draught beers'],

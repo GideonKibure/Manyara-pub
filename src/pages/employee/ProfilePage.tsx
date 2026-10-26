@@ -8,6 +8,7 @@ import { PersonPhoto } from '@/components/ProductPicker'
 import { useApp } from '@/context/AppContext'
 import { LanguageSwitch, useI18n } from '@/i18n/LanguageContext'
 import { passwordChangeSchema, profileSchema } from '@/schemas'
+import { roleLabelKey } from '@/utils/access'
 import { cn } from '@/utils/cn'
 import { formatDateTime } from '@/utils/dates'
 import { storeProfileImage } from '@/utils/image'
@@ -80,7 +81,7 @@ export function ProfilePage() {
               <h1 className="mt-1 font-display text-3xl leading-tight text-white sm:text-4xl">{user?.fullName}</h1>
               <p className="mt-1 text-sm text-white/70">@{user?.username}</p>
               <div className="mt-3 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                <span className="prof-role">{user?.role === 'admin' ? t('profileRoleAdmin') : t('profileRoleEmployee')}</span>
+                <span className="prof-role">{user ? t(roleLabelKey(user)) : t('profileRoleEmployee')}</span>
                 {user?.lastLoginAt ? (
                   <span className="text-xs text-white/55">{t('profileLastLogin')} {formatDateTime(user.lastLoginAt)}</span>
                 ) : null}

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, Download, Receipt, X } from 'lucide-react'
+import { Download, Receipt, X } from 'lucide-react'
 import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
+import { MonthCalendar } from '@/components/ui/MonthCalendar'
 import { useApp } from '@/context/AppContext'
 import { DebtPayDialog } from '@/features/dayClose/DebtCard'
 import { debtPaid, debtRemaining } from '@/features/dayClose/debts'
@@ -11,7 +12,7 @@ import { syncDayBillToCogs } from '@/features/sales/syncBillCogs'
 import { useI18n } from '@/i18n/LanguageContext'
 import type { DayDebt, Product, SalesTransaction } from '@/types'
 import { cn } from '@/utils/cn'
-import { asDateKey, dateKey, formatDate } from '@/utils/dates'
+import { asDateKey, formatDate } from '@/utils/dates'
 import { billBalance, saleTotal } from '@/utils/labels'
 
 type BillTone = 'unpaid' | 'partial' | 'pending' | 'paid'
@@ -30,20 +31,6 @@ type DayBillRow = {
   billId?: string
   locked?: boolean
   employee: string
-}
-
-function monthCells(year: number, month: number) {
-  const first = new Date(year, month, 1)
-  const pad = (first.getDay() + 6) % 7
-  const days = new Date(year, month + 1, 0).getDate()
-  const cells: Array<{ key: string; day: number } | null> = []
-  for (let index = 0; index < pad; index += 1) cells.push(null)
-  for (let day = 1; day <= days; day += 1) {
-    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    cells.push({ key, day })
-  }
-  while (cells.length % 7) cells.push(null)
-  return cells
 }
 
 function customerKey(name: string) {
@@ -135,12 +122,6 @@ export function BillsCogsCalendar() {
   const [paying, setPaying] = useState<DayBillRow | null>(null)
   const [busyKey, setBusyKey] = useState('')
   const [payError, setPayError] = useState('')
-  const year = cursor.getFullYear()
-  const month = cursor.getMonth()
-  const today = dateKey()
-  const title = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }).format(new Date(year, month, 1))
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-  const cells = useMemo(() => monthCells(year, month), [month, year])
   const rowsByDay = useMemo(() => {
     const map = new Map<string, DayBillRow[]>()
     const userId = app.user?.id
@@ -274,82 +255,35 @@ export function BillsCogsCalendar() {
   }
 
   return (
-    <section className="sales-cal-wrap bills-cal-wrap">
-      <div className="bills-cal-glow" aria-hidden="true" />
-      <div className="relative flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-900">
-            <Receipt className="h-3.5 w-3.5" />
-            {t('billsCogsTitle')}
-          </p>
-          <h2 className="mt-1 font-display text-xl leading-tight text-ink sm:text-2xl">{t('billsCogsHeading')}</h2>
-          <p className="mt-1 text-sm text-stone-500">{t('billsCogsBody')}</p>
-        </div>
-      </div>
-
-      <div className="relative mt-4 flex items-center justify-between gap-3">
-        <Button variant="secondary" size="sm" aria-label={t('tablePrev')} onClick={() => setCursor(new Date(year, month - 1, 1))}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <h3 className="font-display text-lg text-ink sm:text-xl">{title}</h3>
-        <Button variant="secondary" size="sm" aria-label={t('tableNext')} onClick={() => setCursor(new Date(year, month + 1, 1))}>
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-
-      <div className="relative mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase tracking-wide text-rose-900/70 sm:text-[11px]">
-        {weekdays.map((label) => (
-          <span key={label}>{label}</span>
-        ))}
-      </div>
-      <div className="sales-cal relative mt-1.5">
-        {cells.map((cell, index) => {
-          if (!cell) return <div key={`empty-${index}`} />
-          const dayRows = rowsByDay.get(cell.key) ?? []
-          const ready = dayRows.length > 0
-          const hasUnpaid = dayRows.some((row) => row.remaining > 0)
-          const future = cell.key > today
-          const isToday = cell.key === today
-          return (
-            <button
-              key={cell.key}
-              type="button"
-              disabled={future}
-              onClick={() => { setPayError(''); setSelected(cell.key) }}
-              className={cn(
-                'sales-cal-day bills-cal-day',
-                ready && (hasUnpaid ? 'has-unpaid' : 'has-paid'),
-                isToday && 'is-today',
-                selected === cell.key && 'is-open',
-                future && 'is-future',
-              )}
-              style={{ animationDelay: `${Math.min(index, 20) * 18}ms` }}
-            >
-              <span className="sales-cal-num">{cell.day}</span>
-              {ready ? (
-                <>
-                  <span className={cn('sales-cal-dot', hasUnpaid ? 'bills-cal-dot-unpaid' : 'bills-cal-dot-paid')} />
-                  <span className={cn('sales-cal-count', hasUnpaid ? 'bills-cal-count' : 'bills-cal-count-paid')}>{dayRows.length}</span>
-                </>
-              ) : (
-                <span className="sales-cal-idle" />
-              )}
-            </button>
-          )
-        })}
-      </div>
-      {!rowsByDay.size && <p className="relative mt-3 text-center text-sm text-stone-500">{t('billsCogsNone')}</p>}
+    <>
+    <MonthCalendar
+      icon={<Receipt className="h-3.5 w-3.5" />}
+      eyebrow={t('billsCogsTitle')}
+      heading={t('billsCogsHeading')}
+      body={t('billsCogsBody')}
+      empty={!rowsByDay.size ? t('billsCogsNone') : undefined}
+      cursor={cursor}
+      onCursorChange={setCursor}
+      selected={selected}
+      onSelect={(day) => { setPayError(''); setSelected(day) }}
+      markFor={(day) => {
+        const dayRows = rowsByDay.get(day) ?? []
+        if (!dayRows.length) return undefined
+        return dayRows.some((row) => row.remaining > 0) ? 'rose' : 'green'
+      }}
+      countFor={(day) => (rowsByDay.get(day) ?? []).length}
+    />
 
       {selected &&
         createPortal(
           <div className="sales-day-pop pop-center">
             <button type="button" className="sales-day-pop-scrim" aria-label={t('closeDialog')} onClick={() => setSelected(null)} />
-            <div role="dialog" aria-modal="true" className="sales-day-pop-sheet bills-day-sheet">
-              <header className="sales-day-pop-head bills-day-pop-head">
+            <div role="dialog" aria-modal="true" className="sales-day-pop-sheet">
+              <header className="sales-day-pop-head">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-200">{t('billsCogsDay')}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-200">{t('billsCogsDay')}</p>
                   <h2 className="mt-0.5 font-display text-xl leading-tight text-white">{formatDate(selected)}</h2>
-                  <p className="mt-1 text-sm text-rose-100/85">
+                  <p className="mt-1 text-sm text-amber-100/80">
                     {unpaidRows.length} {t('billUnpaid').toLowerCase()} · {paidRows.length} {t('billPaid').toLowerCase()} · {app.money(owed)}
                   </p>
                   <p className="mt-0.5 text-xs text-white/65">{t('billLineTotal')} {app.money(billed)}</p>
@@ -428,6 +362,6 @@ export function BillsCogsCalendar() {
         onClose={() => { if (!busyKey) setPaying(null) }}
         onConfirm={(amount) => (paying ? settleRow(paying, amount) : false)}
       />
-    </section>
+    </>
   )
 }

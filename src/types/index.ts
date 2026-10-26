@@ -1,4 +1,5 @@
 export type Role = 'admin' | 'employee'
+export type StaffTitle = 'staff' | 'manager'
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
 export type BillPayment = 'paid' | 'unpaid'
 export type StockLevel = 'normal' | 'low' | 'out'
@@ -22,9 +23,11 @@ export interface Profile {
   email: string
   phone: string
   role: Role
+  staffTitle: StaffTitle
   isActive: boolean
   canSubmitActivities: boolean
   canViewStock: boolean
+  canViewSuppliers: boolean
   createdAt: string
   updatedAt: string
   lastLoginAt?: string
@@ -105,6 +108,7 @@ export interface Supplier {
   id: string
   name: string
   phone: string
+  imageUrl?: string
   isActive: boolean
   createdAt: string
 }
@@ -477,8 +481,10 @@ export interface EmployeeDraft {
   email: string
   phone?: string
   password: string
+  assignedRole?: 'admin' | 'manager' | 'employee'
   canSubmitActivities: boolean
   canViewStock: boolean
+  canViewSuppliers?: boolean
 }
 
 export interface EmployeePatch {
@@ -487,8 +493,10 @@ export interface EmployeePatch {
   username?: string
   password?: string
   isActive?: boolean
+  assignedRole?: 'admin' | 'manager' | 'employee'
   canSubmitActivities?: boolean
   canViewStock?: boolean
+  canViewSuppliers?: boolean
   imageUrl?: string
 }
 

@@ -185,10 +185,6 @@ function dayTotals(db: Database, day: string): Omit<DashDayPoint, 'key' | 'label
   }
 }
 
-function revenueOn(db: Database, key: string) {
-  return dayTotals(db, key).sales
-}
-
 function activityOn(db: Database, key: string, code?: 'pool_table' | 'korokoro') {
   return db.activities
     .filter((activity) => activity.status === 'approved')
@@ -230,17 +226,18 @@ function productForAudit(db: Database, log: AuditLog) {
 export function buildDashboard(db: Database, now = new Date()): DashboardData {
   const snapshots = allSnapshots(db)
   const active = db.products.filter((product) => product.isActive)
-  const today = asDateKey(now.toISOString())
   const yesterday = recentDateKeys(2, now)[0]
   const days30 = recentDateKeys(30, now)
   const days = days30.slice(-7)
   const months = recentMonthKeys(6, now)
-  const todaySalesRevenue = revenueOn(db, today)
-  const todayPool = activityOn(db, today, 'pool_table')
-  const todayKorokoro = activityOn(db, today, 'korokoro')
-  const receivedToday = db.stockIns.filter(
-    (entry) => entry.status === 'approved' && entry.deliveryDate === today,
-  )
+  const headline = dayTotals(db, yesterday)
+  const todaySalesRevenue = headline.sales
+  const todayPool = headline.pool
+  const todayKorokoro = headline.korokoro
+  const receivedToday = {
+    units: headline.stockInUnits,
+    cost: headline.stockInCost,
+  }
 
   const last30Days: DashDayPoint[] = days30.map((key) => {
     const totals = dayTotals(db, key)
@@ -304,9 +301,9 @@ export function buildDashboard(db: Database, now = new Date()): DashboardData {
     pendingActivities: db.activities.filter((entry) => entry.status === 'pending').length,
     pendingExpenses: db.expenses.filter((entry) => entry.status === 'pending').length,
     todaySalesRevenue,
-    yesterdaySalesRevenue: revenueOn(db, yesterday),
-    todayStockReceivedUnits: receivedToday.reduce((sum, entry) => sum + stockInUnits(entry.items), 0),
-    todayStockReceivedCost: receivedToday.reduce((sum, entry) => sum + stockInTotal(entry.items), 0),
+    yesterdaySalesRevenue: headline.sales,
+    todayStockReceivedUnits: receivedToday.units,
+    todayStockReceivedCost: receivedToday.cost,
     todayPool,
     todayKorokoro,
     todayTotalRevenue: todaySalesRevenue + todayPool + todayKorokoro,

@@ -1,4 +1,33 @@
-import type { CogsLine, Product, ProductPriceChange } from '@/types'
+import { ensureProduct } from '@/features/products/offer'
+import type { CogsLine, Product, ProductPriceChange, SizeOffer } from '@/types'
+import { roundBuyingPrice } from '@/utils/money'
+
+export function applyCurrentPrices(product: Product, cost: number, selling: number, sizes?: SizeOffer[]): Product {
+  const ready = ensureProduct(product)
+  if (sizes?.length) {
+    const nextSizes = sizes.map((size) => ({
+      ...size,
+      cost: roundBuyingPrice(size.cost),
+      price: Math.round(size.price),
+    }))
+    return ensureProduct({
+      ...ready,
+      sizeMode: 'many',
+      costPrice: nextSizes[0]?.cost ?? cost,
+      sellingPrice: nextSizes[0]?.price ?? selling,
+      sizes: nextSizes,
+    })
+  }
+  if (ready.sizeMode === 'many' && ready.sizes.length) {
+    return {
+      ...ready,
+      costPrice: cost,
+      sellingPrice: selling,
+      sizes: ready.sizes.map((size) => ({ ...size, cost, price: selling })),
+    }
+  }
+  return { ...ready, costPrice: cost, sellingPrice: selling }
+}
 
 export function lineMatchesProduct(line: CogsLine, product: Product) {
   if (line.productId && line.productId === product.id) return true

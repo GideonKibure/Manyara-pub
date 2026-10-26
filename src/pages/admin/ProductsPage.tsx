@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Download } from 'lucide-react'
 import { Controller, useForm } from 'react-hook-form'
 import { ProductThumb } from '@/components/ProductPicker'
 import { Button } from '@/components/ui/Button'
+import { downloadProductPricesPdf } from '@/features/products/productPricesPdf'
 import { Checkbox, Field, NumberInput, SelectInput, TextInput } from '@/components/ui/Fields'
 import { PageHeader, StockBadge } from '@/components/ui/Feedback'
 import { ConfirmDialog, Modal } from '@/components/ui/Modal'
@@ -62,15 +64,51 @@ export function ProductsPage() {
         title={t('productsTitle')}
         description={t('productsDescription')}
         actions={
-          <Button
-            variant="gold"
-            onClick={() => {
-              setEditing(null)
-              setOpen(true)
-            }}
-          >
-            {t('productsAdd')}
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              className="flex-1 sm:flex-none"
+              disabled={!app.products.length}
+              onClick={() =>
+                downloadProductPricesPdf({
+                  products: app.products,
+                  categories: app.categories,
+                  money: app.money,
+                  business: app.settings.businessName,
+                  title: t('productsPdfTitle'),
+                  tableTitle: t('productsPdfTable'),
+                  productHeader: t('productsProduct'),
+                  categoryHeader: t('productsCategory'),
+                  sizeHeader: t('productsPdfSize'),
+                  buyingHeader: t('productsBuying'),
+                  sellingHeader: t('productsSelling'),
+                  oneSize: t('productsOneSize'),
+                  sizeSmall: t('productsSizeSmall'),
+                  sizeMedium: t('productsSizeMedium'),
+                  sizeBig: t('productsSizeBig'),
+                  cupLabel: t('productsCupPrice'),
+                  halfLabel: t('productsHalfPrice'),
+                  activeLabel: t('productsActive'),
+                  inactiveLabel: t('productsInactive'),
+                  productsLabel: t('navProducts'),
+                  emptyNote: t('productsPdfEmpty'),
+                })
+              }
+            >
+              <Download className="h-4 w-4" />
+              {t('productsPdf')}
+            </Button>
+            <Button
+              variant="gold"
+              className="flex-1 sm:flex-none"
+              onClick={() => {
+                setEditing(null)
+                setOpen(true)
+              }}
+            >
+              {t('productsAdd')}
+            </Button>
+          </>
         }
       />
       <div className="mb-4 grid gap-3 md:grid-cols-3">
@@ -100,8 +138,12 @@ export function ProductsPage() {
             const snap = app.snapshots.find((item) => item.productId === row.id)
             const unit = app.units.find((item) => item.id === row.stockUnitId)?.abbreviation ?? ''
             const price = row.sizeMode === 'many'
-              ? row.sizes.map((size) => `${t(size.name === 'small' ? 'productsSizeSmall' : size.name === 'medium' ? 'productsSizeMedium' : 'productsSizeBig')} ${app.money(size.price)}`).join(' · ')
-              : app.money(row.sellingPrice)
+              ? row.sizes
+                  .map((size) =>
+                    `${t(size.name === 'small' ? 'productsSizeSmall' : size.name === 'medium' ? 'productsSizeMedium' : 'productsSizeBig')} ${t('productsBuying')} ${app.money(size.cost)} · ${t('productsSelling')} ${app.money(size.price)}`,
+                  )
+                  .join(' · ')
+              : `${t('productsBuying')} ${app.money(row.costPrice)} · ${t('productsSelling')} ${app.money(row.sellingPrice)}`
             return (
               <article key={row.id} className="flex flex-col gap-3 rounded-2xl border border-line bg-white p-3 shadow-sm sm:p-4">
                 <div className="flex items-start gap-3">
@@ -121,7 +163,7 @@ export function ProductsPage() {
                   {snap && <StockBadge level={snap.level} />}
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button size="sm" variant="secondary" onClick={() => { setEditing(row); setOpen(true) }}>{t('productsEdit')}</Button>
-                    <Button size="sm" variant="secondary" onClick={() => setPricing(row)}>{t('priceChange')}</Button>
+                    <Button size="sm" variant="gold" onClick={() => setPricing(row)}>{t('priceChange')}</Button>
                     <Button size="sm" variant="danger" onClick={() => setRemoving(row)}>{t('productsDelete')}</Button>
                   </div>
                 </div>
@@ -135,7 +177,10 @@ export function ProductsPage() {
       {open && (
         <ProductDialog
           product={editing}
-          onClose={() => setOpen(false)}
+          onClose={() => {
+            setOpen(false)
+            setEditing(null)
+          }}
         />
       )}
       {pricing && <PriceChangeDialog product={pricing} onClose={() => setPricing(null)} />}
@@ -205,22 +250,27 @@ function ProductDialog({ product, onClose }: { product: Product | null; onClose:
     <Modal open title={product ? t('productsEditTitle') : t('productsAddTitle')} onClose={onClose} wide>
         <form
         className="grid gap-4 md:grid-cols-2"
-        onSubmit={form.handleSubmit(async (values) => {
-          const compiled = compileOffer({
-            ...offer,
-            costPrice: Number.isFinite(values.costPrice) ? values.costPrice : null,
-            sellingPrice: Number.isFinite(values.sellingPrice) ? values.sellingPrice : null,
-          })
+        onSubmit={async (event) => {
+          event.preventDefault()
+          ;(document.activeElement instanceof HTMLElement ? document.activeElement : null)?.blur()
+          const compiled = compileOffer(offer)
           if (!compiled.ok) {
             setOfferError(compiled.error)
             return
           }
+          const payload = { ...form.getValues(), ...compiled }
+          const parsed = productSchema.safeParse(payload)
+          if (!parsed.success) {
+            setOfferError(parsed.error.issues[0]?.message ?? t('productsSave'))
+            await form.trigger()
+            return
+          }
           setOfferError('')
           const result = product
-            ? await app.editProduct(product.id, { ...values, ...compiled })
-            : await app.addProduct({ ...values, ...compiled })
+            ? await app.editProduct(product.id, parsed.data)
+            : await app.addProduct(parsed.data)
           if (result.ok) onClose()
-        })}
+        }}
       >
         <Field label={t('productsName')} error={form.formState.errors.name?.message}>
           <TextInput {...form.register('name')} />
@@ -291,12 +341,22 @@ function ProductDialog({ product, onClose }: { product: Product | null; onClose:
         <Field label={t('productsMinimum')} error={form.formState.errors.minStock?.message}>
           <Controller name="minStock" control={form.control} render={({ field }) => <NumberInput value={Number.isFinite(field.value) ? field.value : null} onValueChange={(next) => field.onChange(next ?? Number.NaN)} />} />
         </Field>
+        <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-3 md:col-span-2">
+          <div>
+            <p className="text-sm font-semibold text-ink">{t('productsPricesTitle')}</p>
+            <p className="mt-1 text-sm text-stone-600">{t('productsPricesHint')}</p>
+          </div>
         {offer.sizeMode === 'one' && (
           <Field label={t('productsBuying')} error={form.formState.errors.costPrice?.message}>
-            <Controller name="costPrice" control={form.control} render={({ field }) => <NumberInput value={Number.isFinite(field.value) ? field.value : null} onValueChange={(next) => field.onChange(next ?? Number.NaN)} />} />
+            <NumberInput
+              value={offer.costPrice}
+              onValueChange={(costPrice) => {
+                setOffer((current) => ({ ...current, costPrice }))
+                form.setValue('costPrice', costPrice ?? Number.NaN, { shouldValidate: true, shouldDirty: true })
+              }}
+            />
           </Field>
         )}
-        <div className="space-y-3 md:col-span-2">
           <p className="text-sm font-medium text-ink">{t('productsSelling')}</p>
           <p className="text-sm text-stone-500">{t('productsSizeHint')}</p>
           <div className="flex flex-wrap gap-2">
@@ -305,7 +365,13 @@ function ProductDialog({ product, onClose }: { product: Product | null; onClose:
           </div>
           {offer.sizeMode === 'one' && (
             <Field label={t('productsSelling')} error={form.formState.errors.sellingPrice?.message}>
-              <Controller name="sellingPrice" control={form.control} render={({ field }) => <NumberInput value={Number.isFinite(field.value) ? field.value : null} onValueChange={(next) => field.onChange(next ?? Number.NaN)} />} />
+              <NumberInput
+                value={offer.sellingPrice}
+                onValueChange={(sellingPrice) => {
+                  setOffer((current) => ({ ...current, sellingPrice }))
+                  form.setValue('sellingPrice', sellingPrice ?? Number.NaN, { shouldValidate: true, shouldDirty: true })
+                }}
+              />
             </Field>
           )}
           {offer.sizeMode === 'many' && (

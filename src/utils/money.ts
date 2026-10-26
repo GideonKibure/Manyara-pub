@@ -5,11 +5,10 @@ export function formatMoney(amount: number, symbol = 'TSh') {
   return `${symbol} ${formatted}`
 }
 
-/** Buying prices are stored in whole thousands of TZS so totals match across records. */
+/** Buying prices are whole TZS. Do not snap them to thousands. */
 export function roundBuyingPrice(amount: number) {
   if (!Number.isFinite(amount) || amount <= 0) return 0
-  const rounded = Math.round(amount / 1000) * 1000
-  return rounded === 0 ? 1000 : rounded
+  return Math.round(amount)
 }
 
 export function formatNumber(amount: number) {

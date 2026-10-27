@@ -1,3 +1,5 @@
+import { billedSoldQty } from '@/features/dayClose/billedSold'
+import { remainingOpeningQty } from '@/features/inventory/remainingOpening'
 import { snapshotFor, stockQtyFromReceived } from '@/features/inventory/stock'
 import { overdueUnpaidBill, unpaidBillHeld } from '@/features/sales/holds'
 import { portionPrice, sizeCost } from '@/features/products/offer'
@@ -51,7 +53,7 @@ import type {
   StockInTransaction,
 } from '@/types'
 import { accessFromAssigned, assignedRoleOf } from '@/utils/access'
-import { asDateKey, dateKey, isEmployeeAllowedDay } from '@/utils/dates'
+import { asDateKey, dateKey, isoOnDay, isEmployeeAllowedDay } from '@/utils/dates'
 import { uid } from '@/utils/id'
 import { allocateInvoiceRef } from '@/utils/invoice'
 import { roundBuyingPrice } from '@/utils/money'
@@ -978,25 +980,49 @@ export function submitSale(db: Database, userId: string, draft: SaleDraft): OpRe
   return finish(next, `${transaction.code} saved. Stock was updated. It stays in your bills until you mark it sold.`)
 }
 
-export function submitRemainingCount(db: Database, userId: string, lines: Array<{ productId: string; remaining: number; unitCost?: number | null }>): OpResult {
+export function submitRemainingCount(
+  db: Database,
+  userId: string,
+  lines: Array<{ productId: string; remaining: number; unitCost?: number | null }>,
+  day = dateKey(),
+): OpResult {
   const actor = activeProfile(db, userId)
   if (!actor.ok) return actor
   if (actor.profile.role !== 'admin' && !db.settings.allowRemainingCount) {
     return fail('The administrator has not opened remaining-stock count.')
   }
   if (!lines.length) return fail('Enter the remaining quantity for each product.')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > dateKey()) {
+    return fail('The remaining-stock date cannot be in the future.')
+  }
+  if (actor.profile.role !== 'admin' && !employeeDayOk(db, day)) {
+    return fail(RECORD_WINDOW_FAIL)
+  }
   const items: SalesItem[] = []
   for (const line of lines) {
     const product = db.products.find((item) => item.id === line.productId && item.isActive)
     if (!product) return fail('Choose an active product.')
     const halfOk = Number.isFinite(line.remaining) && line.remaining >= 0 && Math.abs(line.remaining * 2 - Math.round(line.remaining * 2)) < 1e-6
     if (!halfOk) return fail(`Enter the remaining quantity for ${product.name} as a whole number or a half (for example 10.5).`)
-    const snap = snapshotFor(db, product.id)
-    if (line.remaining > snap.available) {
-      return fail(`${product.name} has ${snap.available} available. Remaining cannot be higher.`)
+    const billed = billedSoldQty(db.sales, product.id, day, userId)
+    const live = snapshotFor(db, product.id).available
+    const { opening } = remainingOpeningQty({
+      closes: db.dayCloses,
+      stockIns: db.stockIns,
+      productId: product.id,
+      day,
+      userId,
+      live,
+      billed,
+    })
+    if (line.remaining > opening) {
+      return fail(`${product.name} has ${opening} opening stock. Remaining cannot be higher.`)
     }
-    const sold = snap.available - line.remaining
+    const sold = opening - billed - line.remaining
     if (sold <= 0) continue
+    if (sold > live) {
+      return fail(`Not enough confirmed stock to record ${product.name}.`)
+    }
     const unitCost = roundBuyingPrice(
       line.unitCost == null || !Number.isFinite(line.unitCost) || line.unitCost < 0 ? product.costPrice : line.unitCost,
     )
@@ -1013,13 +1039,14 @@ export function submitRemainingCount(db: Database, userId: string, lines: Array<
   if (!items.length) return fail('The remaining quantities match current stock. Nothing was sold.')
   const coded = takeCode(db, 'sale', 'SL')
   const stamped = now()
+  const generatedAt = isoOnDay(day, new Date(stamped))
   const transaction: SalesTransaction = {
     id: uid(),
     code: coded.code,
     customerName: '',
     paymentStatus: 'paid',
     recordKind: 'sale',
-    generatedAt: stamped,
+    generatedAt,
     notes: 'Remaining stock count',
     status: 'approved',
     submittedBy: userId,
@@ -1933,7 +1960,10 @@ export function saveDayClose(
     createdAt: existing?.createdAt ?? now(),
   }
   const dayCloses = [...(db.dayCloses ?? []).filter((item) => item.id !== record.id), record]
-  let next = audit({ ...db, dayCloses }, userId, 'day_close.save', 'day_close', record.id, `Saved COGS close for ${day}.`)
+  const sales = record.remainingSaleId
+    ? db.sales.map((sale) => (sale.id === record.remainingSaleId ? { ...sale, generatedAt: isoOnDay(day, new Date(sale.generatedAt || sale.submittedAt)) } : sale))
+    : db.sales
+  let next = audit({ ...db, dayCloses, sales }, userId, 'day_close.save', 'day_close', record.id, `Saved COGS close for ${day}.`)
   next = notifyAdmins(next, {
     type: 'submission_pending',
     title: `COGS close · ${day}`,

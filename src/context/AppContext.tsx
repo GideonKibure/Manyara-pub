@@ -221,7 +221,7 @@ interface AppContextValue {
   removeEmployee: (id: string) => Promise<ActionResult>
   sendStockIn: (draft: StockInDraft) => Promise<ActionResult>
   sendSale: (draft: SaleDraft) => Promise<ActionResult>
-  sendRemainingCount: (lines: Array<{ productId: string; remaining: number; unitCost?: number | null }>) => Promise<ActionResult>
+  sendRemainingCount: (lines: Array<{ productId: string; remaining: number; unitCost?: number | null }>, day?: string) => Promise<ActionResult>
   approveAllPending: (kind: 'stock_in' | 'sale' | 'bill') => Promise<ActionResult>
   setRestockItemStatus: (orderId: string, itemId: string, received: boolean) => Promise<ActionResult>
   editStockIn: (id: string, draft: StockInDraft) => Promise<ActionResult>
@@ -723,7 +723,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? runRemote(() => setRestockItemStatusRemote(orderId, itemId, received))
         : run((database, userId) => setRestockItemStatus(database, userId, orderId, itemId, received)),
     sendSale: async (draft) => (remote ? runRemote(() => sendSaleRemote(draft)) : run((database, userId) => submitSale(database, userId, draft))),
-    sendRemainingCount: async (lines) => (remote ? runRemote(() => sendRemainingCountRemote(lines)) : run((database, userId) => submitRemainingCount(database, userId, lines))),
+    sendRemainingCount: async (lines, day) =>
+      remote ? runRemote(() => sendRemainingCountRemote(lines, day)) : run((database, userId) => submitRemainingCount(database, userId, lines, day)),
     approveAllPending: async (kind) => {
       const userId = sessionRef.current?.userId
       if (!userId) {

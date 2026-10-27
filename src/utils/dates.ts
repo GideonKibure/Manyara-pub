@@ -42,13 +42,17 @@ export function isEmployeeAllowedDay(day: string, extra?: string, lookbackDays: 
   return /^\d{4}-\d{2}-\d{2}$/.test(day) && day >= min && day <= today
 }
 
+export function isoOnDay(day: string, at = new Date()) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return at.toISOString()
+  const [year, month, date] = day.split('-').map(Number)
+  const local = new Date(year, month - 1, date, at.getHours(), at.getMinutes(), at.getSeconds(), at.getMilliseconds())
+  if (local.getTime() > Date.now() + 60_000) return at.toISOString()
+  return local.toISOString()
+}
+
 export function isoOnEmployeeDay(day: string, lookbackDays: unknown = DEFAULT_RECORD_LOOKBACK_DAYS) {
   if (!isEmployeeAllowedDay(day, undefined, lookbackDays)) return new Date().toISOString()
-  const [year, month, date] = day.split('-').map(Number)
-  const now = new Date()
-  const local = new Date(year, month - 1, date, now.getHours(), now.getMinutes(), now.getSeconds())
-  if (local.getTime() > Date.now() + 60_000) return new Date().toISOString()
-  return local.toISOString()
+  return isoOnDay(day)
 }
 
 export function asDateKey(value: string) {

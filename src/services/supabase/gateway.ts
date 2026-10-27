@@ -1142,8 +1142,11 @@ export async function sendSaleRemote(draft: SaleDraft): Promise<ActionResult> {
   return { ok: true, message: 'Sale recorded. Confirmed stock was updated.' }
 }
 
-export async function sendRemainingCountRemote(lines: Array<{ productId: string; remaining: number; unitCost?: number | null }>): Promise<ActionResult> {
-  const result = await submitRemainingCountRemoteRpc({ items: lines })
+export async function sendRemainingCountRemote(
+  lines: Array<{ productId: string; remaining: number; unitCost?: number | null }>,
+  day?: string,
+): Promise<ActionResult> {
+  const result = await submitRemainingCountRemoteRpc({ items: lines, day: day ?? '' })
   if (result.error) return fail(errorText(result.error))
   return { ok: true, message: 'Remaining stock was recorded as sales. Confirmed stock was updated.', meta: result.data ? { id: String(result.data) } : undefined }
 }

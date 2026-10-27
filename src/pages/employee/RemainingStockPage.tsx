@@ -6,6 +6,7 @@ import { ChainScroll } from '@/components/ui/ChainScroll'
 import { Field, NumberInput, TextInput } from '@/components/ui/Fields'
 import { PageHeader, Panel, StatusBadge } from '@/components/ui/Feedback'
 import { billedSoldQty } from '@/features/dayClose/billedSold'
+import { remainingOpeningQty } from '@/features/inventory/remainingOpening'
 import { CogsEditor } from '@/features/dayClose/CogsEditor'
 import { CogsExpenseCard, CogsExpenseEmpty, cogsExpenseGrid } from '@/features/dayClose/CogsExpenseCard'
 import { CogsDebtComposer, CogsDebtEmpty, DebtCard, cogsDebtGrid } from '@/features/dayClose/DebtCard'
@@ -35,7 +36,6 @@ function productMatches(product: Product, needle: string) {
 function CountProductCard({
   product,
   opening,
-  available,
   remaining,
   fallbackRemaining,
   onRemaining,
@@ -44,7 +44,6 @@ function CountProductCard({
 }: {
   product: Product
   opening: number
-  available: number
   remaining: number | null
   fallbackRemaining: number
   onRemaining: (value: number | null) => void
@@ -58,7 +57,7 @@ function CountProductCard({
   const unitCost = roundBuyingPrice(product.costPrice)
   const profit = sold * (product.sellingPrice - unitCost)
   const halfOk = Number.isFinite(left) && left >= 0 && Math.abs(left * 2 - Math.round(left * 2)) < 1e-6
-  const cap = Math.min(opening, available)
+  const cap = opening
   const over = left > cap + 1e-6 || left < 0 || !halfOk
   const nudge = (delta: number) => {
     const next = Math.round((left + delta) * 2) / 2
@@ -158,13 +157,22 @@ export function RemainingStockPage() {
         const live = snapshotFor({ products: app.products, sales: app.sales, movements: app.movements }, product.id).available
         const billed = billedSoldQty(app.sales, product.id, cogsDay, app.user?.id)
         const line = saved.get(product.id)
-        const opening = line ? line.remaining + line.sold : live + billed
-        const fallbackRemaining = line ? line.remaining : live
+        const computed = remainingOpeningQty({
+          closes: app.dayCloses,
+          stockIns: app.stockIns,
+          productId: product.id,
+          day: cogsDay,
+          userId: app.user?.id,
+          live,
+          billed,
+        })
+        const opening = line ? line.remaining + line.sold : computed.opening
+        const fallbackRemaining = line ? line.remaining : opening
         return { product, opening, live, billed, fallbackRemaining, saved: line }
       })
       .filter((row) => row.opening > 0 || row.saved)
       .sort((a, b) => a.product.name.localeCompare(b.product.name))
-  }, [app.products, app.sales, app.movements, app.user?.id, cogsDay, myClose?.id, myClose?.lines])
+  }, [app.dayCloses, app.products, app.sales, app.stockIns, app.movements, app.user?.id, cogsDay, myClose?.id, myClose?.lines])
   const [remaining, setRemaining] = useState<Record<string, number | null>>({})
   const [skipped, setSkipped] = useState<string[]>([])
   const [search, setSearch] = useState('')
@@ -234,15 +242,15 @@ export function RemainingStockPage() {
   }, [search, filter])
 
   const locked = myClose?.status === 'approved'
-  const filled = rows.filter((row) => !skipped.includes(row.product.id)).map(({ product, opening, live, fallbackRemaining }) => {
+  const filled = rows.filter((row) => !skipped.includes(row.product.id)).map(({ product, opening, live, billed, fallbackRemaining }) => {
     const value = remaining[product.id]
     const left = value == null ? fallbackRemaining : value
     const sold = Math.max(0, opening - left)
     const unitCost = roundBuyingPrice(product.costPrice)
     const profit = sold * (product.sellingPrice - unitCost)
     const halfOk = Number.isFinite(left) && left >= 0 && Math.abs(left * 2 - Math.round(left * 2)) < 1e-6
-    const cap = Math.min(opening, live)
-    return { product, opening, live, left, sold, unitCost, profit, revenue: Math.round(sold * product.sellingPrice), over: left > cap + 1e-6 || left < 0 || !halfOk, fallbackRemaining }
+    const cap = opening
+    return { product, opening, live, billed, left, sold, unitCost, profit, revenue: Math.round(sold * product.sellingPrice), over: left > cap + 1e-6 || left < 0 || !halfOk, fallbackRemaining }
   })
   const openingUnits = filled.reduce((sum, row) => sum + row.opening, 0)
   const soldUnits = filled.reduce((sum, row) => sum + row.sold, 0)
@@ -294,12 +302,12 @@ export function RemainingStockPage() {
     const payloadLines = step === 'count' || !lines.length ? countedRows : lines
     setLines(payloadLines)
     let saleId = myClose?.remainingSaleId
-    const extraSold = filled.some((row) => {
-      const live = snapshotFor({ products: app.products, sales: app.sales, movements: app.movements }, row.product.id).available
-      return row.left < live - 1e-6
-    })
+    const extraSold = filled.some((row) => row.opening - row.billed - row.left > 1e-6)
     if (!saleId && allowed && extraSold) {
-      const counted = await app.sendRemainingCount(filled.map((row) => ({ productId: row.product.id, remaining: row.left, unitCost: row.unitCost })))
+      const counted = await app.sendRemainingCount(
+        filled.map((row) => ({ productId: row.product.id, remaining: row.left, unitCost: row.unitCost })),
+        cogsDay,
+      )
       if (!counted.ok) {
         setBusy(false)
         return
@@ -446,7 +454,6 @@ export function RemainingStockPage() {
                         key={row.product.id}
                         product={row.product}
                         opening={row.opening}
-                        available={row.live}
                         remaining={remaining[row.product.id] ?? null}
                         fallbackRemaining={row.fallbackRemaining}
                         highlighted={Boolean(needle && productMatches(row.product, needle))}

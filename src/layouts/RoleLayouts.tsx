@@ -45,7 +45,6 @@ export function AdminLayout() {
       label: t('navOperations'),
       items: [
         { to: '/admin/stock-in', label: t('navStockIn'), icon: PackagePlus },
-        { to: '/admin/sales', label: t('navSales'), icon: Receipt },
         { to: '/admin/bills', label: t('navBills'), icon: ScrollText },
         { to: '/admin/expenses', label: t('navExpenses'), icon: Wallet },
         { to: '/admin/activities', label: t('navActivities'), icon: Gamepad2 },
@@ -80,7 +79,7 @@ export function AdminLayout() {
         { to: '/admin/dashboard', label: t('navHome'), icon: House, end: true },
         { to: '/admin/approvals', label: t('navApprovals'), icon: ClipboardList, badge: pending },
         { to: '/admin/stock-in', label: t('navStock'), icon: PackagePlus },
-        { to: '/admin/sales', label: t('navSales'), icon: Receipt },
+        { to: '/admin/remaining', label: t('navRemaining'), icon: ClipboardCheck },
         { to: '/admin/dashboard', label: t('navMenu'), icon: Menu, menu: true },
       ]}
     />

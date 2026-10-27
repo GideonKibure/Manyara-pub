@@ -1,4 +1,15 @@
-import type { InventoryMovement, Product, SalesTransaction, StockAvailability, StockLevel, StockSnapshot } from '@/types'
+import { cogsAvailableQty } from '@/features/inventory/remainingOpening'
+import type { DayClose, InventoryMovement, Product, SalesTransaction, StockAvailability, StockInTransaction, StockLevel, StockSnapshot } from '@/types'
+import { dateKey } from '@/utils/dates'
+
+type StockDb = {
+  movements: InventoryMovement[]
+  sales: SalesTransaction[]
+  products: Product[]
+  availability?: StockAvailability[]
+  dayCloses?: DayClose[]
+  stockIns?: StockInTransaction[]
+}
 
 export function stockQtyFromReceived(received: number, conversionFactor: number) {
   if (!Number.isFinite(received) || !Number.isFinite(conversionFactor)) return 0
@@ -31,15 +42,31 @@ function unmovedBillQty(sales: SalesTransaction[], movements: InventoryMovement[
   }, 0)
 }
 
-export function snapshotFor(
-  db: { movements: InventoryMovement[]; sales: SalesTransaction[]; products: Product[]; availability?: StockAvailability[] },
-  productId: string,
-): StockSnapshot {
+export function snapshotFor(db: StockDb, productId: string, asOfDay = dateKey()): StockSnapshot {
   const product = db.products.find((item) => item.id === productId)
+  const reserved = Math.max(0, reservedQty(db.sales, productId, db.movements) - unmovedBillQty(db.sales, db.movements, productId))
+  const counted = cogsAvailableQty({
+    closes: db.dayCloses,
+    stockIns: db.stockIns,
+    productId,
+    asOfDay,
+    inclusive: true,
+  })
+  if (counted.available != null) {
+    const available = counted.available
+    const minimum = product?.minStock ?? 0
+    return {
+      productId,
+      confirmed: available,
+      reserved,
+      available,
+      minimum,
+      level: stockLevel(available, minimum),
+    }
+  }
   const listed = db.availability?.find((item) => item.productId === productId)
   const written = unmovedBillQty(db.sales, db.movements, productId)
   const confirmed = (listed?.confirmed ?? confirmedQty(db.movements, productId)) - written
-  const reserved = Math.max(0, (listed?.reserved ?? reservedQty(db.sales, productId, db.movements)) - written)
   const available = confirmed - reserved
   const minimum = product?.minStock ?? 0
   return {
@@ -52,6 +79,6 @@ export function snapshotFor(
   }
 }
 
-export function allSnapshots(db: { movements: InventoryMovement[]; sales: SalesTransaction[]; products: Product[]; availability?: StockAvailability[] }) {
-  return db.products.map((product) => snapshotFor(db, product.id))
+export function allSnapshots(db: StockDb, asOfDay = dateKey()) {
+  return db.products.map((product) => snapshotFor(db, product.id, asOfDay))
 }

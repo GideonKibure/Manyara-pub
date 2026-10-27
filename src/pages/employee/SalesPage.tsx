@@ -438,7 +438,7 @@ export function SalesPage({ kind = 'sale' }: { kind?: RecordKind }) {
     }
     setReview(false)
     if (app.user?.role === 'admin') {
-      navigate(isBill ? '/admin/bills' : '/admin/sales')
+      navigate(isBill ? '/admin/bills' : '/admin/remaining')
       return
     }
     setLines([])

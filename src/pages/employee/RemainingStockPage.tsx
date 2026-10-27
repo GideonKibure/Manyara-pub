@@ -154,7 +154,13 @@ export function RemainingStockPage() {
     return app.products
       .filter((product) => product.isActive)
       .map((product) => {
-        const live = snapshotFor({ products: app.products, sales: app.sales, movements: app.movements }, product.id).available
+        const live = snapshotFor({
+          products: app.products,
+          sales: app.sales,
+          movements: app.movements,
+          dayCloses: app.dayCloses,
+          stockIns: app.stockIns,
+        }, product.id).available
         const billed = billedSoldQty(app.sales, product.id, cogsDay, app.user?.id)
         const line = saved.get(product.id)
         const computed = remainingOpeningQty({

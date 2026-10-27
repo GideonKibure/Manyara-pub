@@ -72,9 +72,9 @@ export function AppRouter() {
             <Route path="/admin/stock-in" element={<AdminStockInPage />} />
             <Route path="/admin/stock-in/new" element={<EmployeeStockInPage />} />
             <Route path="/admin/stock-in/edit" element={<EmployeeStockInPage />} />
-            <Route path="/admin/sales" element={<AdminSalesPage kind="sale" />} />
-            <Route path="/admin/sales/new" element={<EmployeeSalesPage kind="sale" />} />
-            <Route path="/admin/sales/edit" element={<EmployeeSalesPage kind="sale" />} />
+            <Route path="/admin/sales" element={<Navigate to="/admin/remaining" replace />} />
+            <Route path="/admin/sales/new" element={<Navigate to="/admin/remaining" replace />} />
+            <Route path="/admin/sales/edit" element={<Navigate to="/admin/remaining" replace />} />
             <Route path="/admin/bills" element={<AdminSalesPage kind="bill" />} />
             <Route path="/admin/bills/new" element={<EmployeeSalesPage kind="bill" />} />
             <Route path="/admin/bills/edit" element={<EmployeeSalesPage kind="bill" />} />

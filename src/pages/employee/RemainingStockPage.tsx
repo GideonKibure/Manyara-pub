@@ -287,7 +287,7 @@ export function RemainingStockPage() {
     profit: row.profit,
     unitCost: row.unitCost,
   }))
-  const reportRows: SalesDayRow[] = (lines.length ? lines : countedRows).filter((row) => row.sold > 0 || row.remaining > 0)
+  const reportRows: SalesDayRow[] = (lines.length ? lines : countedRows).filter((row) => row.sold > 0)
   const sheetExpenses = expenseItems.reduce((sum, item) => sum + item.amount, 0)
   const mobile = mobileItems.reduce((sum, item) => sum + (item.amount || 0), 0)
 

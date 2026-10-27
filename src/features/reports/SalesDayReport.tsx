@@ -95,7 +95,7 @@ export function reportFromCount(db: Pick<Database, 'products' | 'sales' | 'movem
         profit: qty * (price - cost),
       }
     })
-    .filter((row) => row.sold > 0 || row.remaining > 0)
+    .filter((row) => row.sold > 0)
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
@@ -335,7 +335,8 @@ export function CogsSheet({
   const app = useApp()
   const { t } = useI18n()
   const [paying, setPaying] = useState<DayDebt | null>(null)
-  const totals = cogsTotals(rows, expenses, debts, mobile)
+  const soldRows = rows.filter((row) => row.sold > 0)
+  const totals = cogsTotals(soldRows, expenses, debts, mobile)
   const lines = [
     { id: 'sales', label: t('remainRevenue'), amount: totals.sales, tone: 'plain' as const },
     { id: 'cogs', label: t('cogsCost'), amount: totals.cogs, tone: 'plain' as const },
@@ -359,7 +360,7 @@ export function CogsSheet({
       business: app.settings.businessName,
       staff,
       approved,
-      rows,
+      rows: soldRows,
       expenses: expenseItems,
       expenseTotal: expenses,
       debts,
@@ -402,7 +403,7 @@ export function CogsSheet({
         </div>
       </div>
       <div className="space-y-4 p-3 sm:p-4">
-        {showSold ? <CogsSoldPane rows={rows} /> : null}
+        {showSold ? <CogsSoldPane rows={soldRows} /> : null}
         <div className="overflow-hidden rounded-[1.35rem] border border-[#e6e0d6] bg-white">
           {lines.map((line, index) => (
             <div

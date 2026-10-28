@@ -308,10 +308,10 @@ export function RemainingStockPage() {
     const payloadLines = step === 'count' || !lines.length ? countedRows : lines
     setLines(payloadLines)
     let saleId = myClose?.remainingSaleId
-    const extraSold = filled.some((row) => row.opening - row.billed - row.left > 1e-6)
-    if (!saleId && allowed && extraSold) {
+    const soldLines = filled.filter((row) => row.opening - row.billed - row.left > 1e-6)
+    if (!saleId && allowed && soldLines.length) {
       const counted = await app.sendRemainingCount(
-        filled.map((row) => ({ productId: row.product.id, remaining: row.left, unitCost: row.unitCost })),
+        soldLines.map((row) => ({ productId: row.product.id, remaining: row.left, unitCost: row.unitCost })),
         cogsDay,
       )
       if (!counted.ok) {

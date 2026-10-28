@@ -1020,9 +1020,6 @@ export function submitRemainingCount(
     }
     const sold = opening - billed - line.remaining
     if (sold <= 0) continue
-    if (sold > live) {
-      return fail(`Not enough confirmed stock to record ${product.name}.`)
-    }
     const unitCost = roundBuyingPrice(
       line.unitCost == null || !Number.isFinite(line.unitCost) || line.unitCost < 0 ? product.costPrice : line.unitCost,
     )
